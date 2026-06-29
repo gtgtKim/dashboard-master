@@ -17,6 +17,9 @@ export const GA4_CONFIG = {
     itemName: process.env.GA4_DIMENSION_ITEM_NAME || 'itemName',
     eventItemName: process.env.GA4_DIMENSION_EVENT_ITEM_NAME || 'customEvent:item_name',
   },
+  metrics: {
+    wishlistQuantity: process.env.GA4_WISHLIST_QUANTITY_METRIC || 'quantity',
+  },
   events: {
     homepage: process.env.GA4_EVENT_HOMEPAGE || 'click_homepage',
     navigation: process.env.GA4_EVENT_NAVIGATION || 'click_nav',
@@ -28,6 +31,7 @@ export const GA4_CONFIG = {
 };
 
 const METRICS_SPEC = [{ name: 'eventCount' }, { name: 'sessions' }, { name: 'activeUsers' }];
+const SESSION_USER_METRICS = [{ name: 'sessions' }, { name: 'activeUsers' }];
 let cachedClient = null;
 let cachedKeyFilename = null;
 
@@ -48,7 +52,18 @@ export async function queryGa4Metrics({ targetId, startDate, endDate }) {
 
   const client = getGa4Client(keyFilename);
   const deviceCategory = deviceCategoryForTargetId(targetId);
-  const [homepageResponse, navigationResponse, wishlistEventParamResponse, wishlistItemResponse, totalResponse] = await Promise.all([
+  const warnings = [];
+  const wishlistQuantityMetrics = [{ name: GA4_CONFIG.metrics.wishlistQuantity }, ...SESSION_USER_METRICS];
+  const [
+    homepageResponse,
+    navigationResponse,
+    wishlistEventParamQuantityResponse,
+    wishlistItemQuantityResponse,
+    wishlistItemResponse,
+    allEventsTotalResponse,
+    homepageNavigationTotalResponse,
+    wishlistQuantityTotalResponse,
+  ] = await Promise.all([
     runRowsReport(client, {
       startDate,
       endDate,
@@ -70,34 +85,69 @@ export async function queryGa4Metrics({ targetId, startDate, endDate }) {
       ],
       dimensionFilter: navigationFilter(deviceCategory),
     }),
-    runRowsReport(client, {
+    safeRunRowsReport(client, {
+      label: `wishlist ${GA4_CONFIG.metrics.wishlistQuantity} by ${GA4_CONFIG.dimensions.eventItemName}`,
       startDate,
       endDate,
       dimensions: [GA4_CONFIG.dimensions.eventItemName],
+      metrics: wishlistQuantityMetrics,
+      dimensionFilter: wishlistFilter(deviceCategory),
+    }),
+    safeRunRowsReport(client, {
+      label: `wishlist ${GA4_CONFIG.metrics.wishlistQuantity} by ${GA4_CONFIG.dimensions.itemName}`,
+      startDate,
+      endDate,
+      dimensions: [GA4_CONFIG.dimensions.itemName],
+      metrics: wishlistQuantityMetrics,
       dimensionFilter: wishlistFilter(deviceCategory),
     }),
     runRowsReport(client, {
       startDate,
       endDate,
       dimensions: [GA4_CONFIG.dimensions.itemName],
-      metrics: [{ name: 'sessions' }, { name: 'activeUsers' }],
+      metrics: SESSION_USER_METRICS,
       dimensionFilter: wishlistFilter(deviceCategory),
     }),
     runTotalsReport(client, {
       startDate,
       endDate,
-      dimensionFilter: totalFilter(deviceCategory),
+      dimensionFilter: allEventsTotalFilter(deviceCategory),
+    }),
+    runTotalsReport(client, {
+      startDate,
+      endDate,
+      dimensionFilter: homepageNavigationFilter(deviceCategory),
+    }),
+    safeRunTotalsReport(client, {
+      label: `wishlist total ${GA4_CONFIG.metrics.wishlistQuantity}`,
+      startDate,
+      endDate,
+      metrics: [{ name: GA4_CONFIG.metrics.wishlistQuantity }],
+      dimensionFilter: wishlistFilter(deviceCategory),
     }),
   ]);
 
   const metrics = {};
   mergeHomepageMetrics(metrics, homepageResponse);
   mergeNavigationMetrics(metrics, navigationResponse);
-  mergeWishlistEventParamMetrics(metrics, wishlistEventParamResponse);
+  const wishlistQuantityResponse = responseHasPositiveFirstMetric(wishlistItemQuantityResponse)
+    ? wishlistItemQuantityResponse
+    : wishlistEventParamQuantityResponse;
+  mergeWishlistQuantityMetrics(metrics, wishlistQuantityResponse);
   mergeWishlistItemMetrics(metrics, wishlistItemResponse);
 
-  const totalRow = totalResponse.rows?.[0];
-  const totals = metricsFromRow(totalRow);
+  collectReportWarning(warnings, wishlistEventParamQuantityResponse);
+  collectReportWarning(warnings, wishlistItemQuantityResponse);
+  collectReportWarning(warnings, wishlistQuantityTotalResponse);
+
+  const allEventsTotals = metricsFromRow(allEventsTotalResponse.rows?.[0]);
+  const homepageNavigationTotals = metricsFromRow(homepageNavigationTotalResponse.rows?.[0]);
+  const wishlistQuantityTotal = firstMetricFromRow(wishlistQuantityTotalResponse.rows?.[0]);
+  const totals = {
+    eventCount: homepageNavigationTotals.eventCount + wishlistQuantityTotal,
+    sessions: allEventsTotals.sessions,
+    activeUsers: allEventsTotals.activeUsers,
+  };
 
   return {
     propertyId: GA4_CONFIG.propertyId,
@@ -107,12 +157,14 @@ export async function queryGa4Metrics({ targetId, startDate, endDate }) {
     endDate,
     deviceCategory,
     eventNames: Object.values(GA4_CONFIG.events),
+    wishlistQuantityMetric: GA4_CONFIG.metrics.wishlistQuantity,
     metrics,
     totals,
+    warnings,
     rowCount:
       Number(homepageResponse.rows?.length || 0) +
       Number(navigationResponse.rows?.length || 0) +
-      Number(wishlistEventParamResponse.rows?.length || 0) +
+      Number(wishlistQuantityResponse.rows?.length || 0) +
       Number(wishlistItemResponse.rows?.length || 0),
   };
 }
@@ -139,6 +191,28 @@ async function runTotalsReport(client, { startDate, endDate, dimensionFilter }) 
   return response;
 }
 
+async function safeRunRowsReport(client, { label, ...params }) {
+  try {
+    return await runRowsReport(client, params);
+  } catch (error) {
+    return emptyReportWithError(label, error);
+  }
+}
+
+async function safeRunTotalsReport(client, { label, startDate, endDate, dimensionFilter, metrics }) {
+  try {
+    const [response] = await client.runReport({
+      property: `properties/${GA4_CONFIG.propertyId}`,
+      dateRanges: [{ startDate, endDate }],
+      metrics,
+      dimensionFilter,
+    });
+    return response;
+  } catch (error) {
+    return emptyReportWithError(label, error);
+  }
+}
+
 function mergeHomepageMetrics(metrics, response) {
   for (const row of response.rows || []) {
     const [category = '', action = '', area = '', label = ''] = dimensionsFromRow(row);
@@ -155,12 +229,17 @@ function mergeNavigationMetrics(metrics, response) {
   }
 }
 
-function mergeWishlistEventParamMetrics(metrics, response) {
+function mergeWishlistQuantityMetrics(metrics, response) {
   for (const row of response.rows || []) {
     const [itemName = ''] = dimensionsFromRow(row);
     if (!itemName) continue;
     const key = makeGa4MetricKey('ecommerce', GA4_CONFIG.events.wishlist, '', itemName);
-    metrics[key] = sumGa4Metrics(metrics[key], metricsFromRow(row));
+    const rowMetrics = {
+      eventCount: numberFromMetric(row.metricValues?.[0]?.value),
+      sessions: 0,
+      activeUsers: 0,
+    };
+    metrics[key] = sumGa4Metrics(metrics[key], rowMetrics);
   }
 }
 
@@ -203,6 +282,10 @@ function wishlistFilter(deviceCategory) {
 }
 
 function totalFilter(deviceCategory) {
+  return allEventsTotalFilter(deviceCategory);
+}
+
+function allEventsTotalFilter(deviceCategory) {
   return andFilter([
     exactFilter(GA4_CONFIG.dimensions.deviceCategory, deviceCategory),
     {
@@ -211,6 +294,20 @@ function totalFilter(deviceCategory) {
           homepageFilter(deviceCategory),
           navigationFilter(deviceCategory),
           wishlistFilter(deviceCategory),
+        ],
+      },
+    },
+  ]);
+}
+
+function homepageNavigationFilter(deviceCategory) {
+  return andFilter([
+    exactFilter(GA4_CONFIG.dimensions.deviceCategory, deviceCategory),
+    {
+      orGroup: {
+        expressions: [
+          homepageFilter(deviceCategory),
+          navigationFilter(deviceCategory),
         ],
       },
     },
@@ -239,6 +336,30 @@ function metricsFromRow(row) {
     eventCount: numberFromMetric(row?.metricValues?.[0]?.value),
     sessions: numberFromMetric(row?.metricValues?.[1]?.value),
     activeUsers: numberFromMetric(row?.metricValues?.[2]?.value),
+  };
+}
+
+function firstMetricFromRow(row) {
+  return numberFromMetric(row?.metricValues?.[0]?.value);
+}
+
+function responseHasPositiveFirstMetric(response) {
+  return (response.rows || []).some((row) => firstMetricFromRow(row) > 0);
+}
+
+function collectReportWarning(warnings, response) {
+  if (!response?.warning) return;
+  warnings.push(response.warning);
+}
+
+function emptyReportWithError(label, error) {
+  return {
+    rows: [],
+    rowCount: 0,
+    warning: {
+      label,
+      error: error instanceof Error ? error.message : String(error),
+    },
   };
 }
 

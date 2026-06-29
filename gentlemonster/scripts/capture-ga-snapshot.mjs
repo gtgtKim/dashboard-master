@@ -5,12 +5,14 @@ import path from 'node:path';
 import sharp from 'sharp';
 import { GA4_CONFIG, makeGa4MetricKey } from './ga4-data-api.mjs';
 
+process.env.TZ = process.env.CAPTURE_TIMEZONE || process.env.TZ || 'America/New_York';
+
 const OUTPUT_ROOT = path.resolve('snapshots');
 const RUN_ID = process.env.RUN_ID || timestampForPath(new Date());
 const RUN_DIR = path.join(OUTPUT_ROOT, RUN_ID);
 const TARGET_URL = process.env.TARGET_URL || 'https://www.gentlemonster.com/us/en';
 const TARGET_LOCALE = process.env.TARGET_LOCALE || 'en-US';
-const TARGET_TIMEZONE = process.env.TARGET_TIMEZONE || 'America/New_York';
+const TARGET_TIMEZONE = process.env.TARGET_TIMEZONE || process.env.TZ || 'America/New_York';
 const TRACKING_ATTRIBUTE_SELECTOR = '[data-category], [data-action], [data-area], [data-label]';
 const GA4_METRICS_ENABLED = process.env.GA4_METRICS_ENABLED === 'true';
 
@@ -4297,8 +4299,8 @@ function renderSnapshotCatalog() {
           <section class="help-section">
             <h3>이 대시보드의 목적</h3>
             <p>Gentle Monster 메인페이지는 노출 요소가 자주 바뀌고, 각 클릭 영역이 어떤 <strong>data-category</strong>, <strong>data-action</strong>, <strong>data-area</strong>, <strong>data-label</strong> 값을 가지는지 한눈에 파악하기 어렵습니다. 이 대시보드는 날짜별 메인페이지 화면과 클릭 어트리뷰트를 함께 저장하고 비교할 수 있도록 만든 화면입니다.</p>
-            <p>매일 오전 10시 KST에 봇이 Gentle Monster PC/MO 메인페이지에 접속해서 콘텐츠 HTML을 저장합니다. 쿠키 동의와 국가 선택 팝업은 제거하고, 메인 콘텐츠뿐 아니라 헤더/푸터/네비게이션을 포함한 전체 DOM에서 네 어트리뷰트 중 하나라도 가진 요소를 수집합니다.</p>
-            <p>왼쪽 화면은 봇이 사이트에 직접 들어가 캡처한 HTML 화면이고, 오른쪽 표는 선택한 기간 동안 발견된 어트리뷰트 요소를 보여줍니다. GA4 데이터 조회는 이후 단계에서 연결합니다.</p>
+            <p>매일 오전 10시 미국 동부시간(${escapeHtml(TARGET_TIMEZONE)})에 봇이 Gentle Monster PC/MO 메인페이지에 접속해서 콘텐츠 HTML을 저장합니다. 쿠키 동의와 국가 선택 팝업은 제거하고, 메인 콘텐츠뿐 아니라 헤더/푸터/네비게이션을 포함한 전체 DOM에서 네 어트리뷰트 중 하나라도 가진 요소를 수집합니다.</p>
+            <p>왼쪽 화면은 봇이 사이트에 직접 들어가 캡처한 HTML 화면이고, 오른쪽 표는 선택한 기간 동안 발견된 어트리뷰트 요소와 GA4 데이터를 함께 보여줍니다.</p>
           </section>
           <section class="help-section">
             <h3>페이지와 기간 선택</h3>
@@ -4311,7 +4313,7 @@ function renderSnapshotCatalog() {
           </section>
           <section class="help-section">
             <h3>GA4 데이터</h3>
-            <p>현재 단계에서는 GA4 데이터 조회를 비활성화했습니다. 이후 GA4 속성, 이벤트명, 커스텀 차원 기준이 정해지면 이 화면에 이벤트 수를 다시 연결할 수 있습니다.</p>
+            <p>조회 기간과 페이지에 맞춰 GA4 Data API에서 데이터를 다시 불러옵니다. PC는 desktop, MO는 mobile 기준이며, add_to_wishlist의 카운트는 eventCount 대신 quantity metric을 우선 사용합니다.</p>
           </section>
           <section class="help-section">
             <h3>좌우 클릭 연동</h3>
@@ -4339,7 +4341,7 @@ function renderSnapshotCatalog() {
           </section>
           <section class="help-section">
             <h3>자동 수집</h3>
-            <p>수집 봇은 매일 오전 10시에 사이트에 접속해 HTML과 GA 어트리뷰트 목록을 저장합니다. 수집이 실패하면 10분 간격으로 최대 6번 재시도하고, 성공한 날짜별 데이터는 PC/MO 각각 하나의 캡처본만 유지합니다.</p>
+            <p>수집 봇은 매일 오전 10시 미국 동부시간(${escapeHtml(TARGET_TIMEZONE)})에 사이트에 접속해 HTML과 GA 어트리뷰트 목록을 저장합니다. 수집이 실패하면 10분 간격으로 최대 6번 재시도하고, 성공한 날짜별 데이터는 PC/MO 각각 하나의 캡처본만 유지합니다.</p>
           </section>
         </div>
         <div class="help-dialog-foot">
@@ -4441,7 +4443,7 @@ function renderSnapshotCatalog() {
       {
         target: '#preview',
         title: '왼쪽 캡처 화면',
-        body: '매일 오전 10시에 봇이 사이트에 접속해서 저장한 HTML 화면입니다. 화면 안 요소를 클릭하면 오른쪽 표의 해당 행으로 이동합니다.',
+        body: '매일 오전 10시 미국 동부시간 기준으로 봇이 사이트에 접속해서 저장한 HTML 화면입니다. 화면 안 요소를 클릭하면 오른쪽 표의 해당 행으로 이동합니다.',
       },
       {
         target: '#tableWrap',
@@ -4874,6 +4876,7 @@ function renderSnapshotCatalog() {
           totals: payload.totals || sumMetrics(periodRecords.map((record) => record.ga4)),
           rowCount: payload.rowCount || 0,
           eventCategory: payload.eventCategory || '',
+          warnings: Array.isArray(payload.warnings) ? payload.warnings : [],
         };
       } catch (error) {
         if (requestId !== ga4RequestId) return;
@@ -6178,8 +6181,9 @@ function renderSnapshotCatalog() {
       ];
 
       if (GA4_METRICS_ENABLED) {
+        const warningText = ga4Status.warnings?.length ? ' · warning ' + ga4Status.warnings.length : '';
         const ga4Text = ga4Status.state === 'ok'
-          ? 'ok ' + formatNumber(ga4Status.totals.eventCount) + ' events'
+          ? 'ok ' + formatNumber(ga4Status.totals.eventCount) + ' events' + warningText
           : ga4Status.message + (ga4Status.detail ? ' (' + ga4Status.detail + ')' : '');
         items.splice(3, 0, '<strong>GA4</strong> ' + escapeHtml(ga4Text));
       }
@@ -6331,7 +6335,8 @@ function dateFromIso(value) {
   if (!value) return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
-  return date.toISOString().slice(0, 10);
+  const parts = datePartsForTimezone(date, process.env.TZ || TARGET_TIMEZONE);
+  return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
 function isConfiguredTargetUrl(value) {
@@ -6456,14 +6461,31 @@ function jsonForScript(value) {
 }
 
 function timestampForPath(date) {
-  const pad = (value) => String(value).padStart(2, '0');
+  const parts = datePartsForTimezone(date, process.env.TZ || TARGET_TIMEZONE);
   return [
-    date.getFullYear(),
-    pad(date.getMonth() + 1),
-    pad(date.getDate()),
+    parts.year,
+    parts.month,
+    parts.day,
     'T',
-    pad(date.getHours()),
-    pad(date.getMinutes()),
-    pad(date.getSeconds()),
+    parts.hour,
+    parts.minute,
+    parts.second,
   ].join('');
+}
+
+function datePartsForTimezone(date, timeZone) {
+  const values = {};
+  for (const part of new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date)) {
+    if (part.type !== 'literal') values[part.type] = part.value;
+  }
+  return values;
 }

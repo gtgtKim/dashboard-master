@@ -1,7 +1,8 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import { runCaptureWithRetry } from './capture-with-retry.mjs';
 
-process.env.TZ ||= 'Asia/Seoul';
+const captureTimezone = process.env.CAPTURE_TIMEZONE || process.env.TZ || 'America/New_York';
+process.env.TZ = captureTimezone;
 
 const scheduleHour = integerInRange(process.env.CAPTURE_SCHEDULE_HOUR, 10, 0, 23);
 const scheduleMinute = integerInRange(process.env.CAPTURE_SCHEDULE_MINUTE, 0, 0, 59);
@@ -21,7 +22,7 @@ if (once) {
   process.exit(result.ok ? 0 : 1);
 }
 
-log(`scheduler started; daily capture time ${pad(scheduleHour)}:${pad(scheduleMinute)} ${process.env.TZ}`);
+log(`scheduler started; daily capture time ${pad(scheduleHour)}:${pad(scheduleMinute)} ${captureTimezone}`);
 
 while (true) {
   const next = nextScheduledAt(new Date());

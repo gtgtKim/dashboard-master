@@ -14,7 +14,7 @@ It collects elements that have at least one of these tracking attributes:
 - `data-area`
 - `data-label`
 
-GA4 metric lookup is intentionally disabled for now.
+GA4 metric lookup is enabled through the Google Analytics Data API.
 
 ## Local Docker
 
@@ -68,4 +68,5 @@ Do not commit these files or folders:
 - `snapshots/`
 - `.env`
 
-The scheduler runs capture every day at `10:00 Asia/Seoul` and retries failures.
+The scheduler runs capture every day at `10:00 America/New_York` and retries failures.
+The snapshot folder date is also generated in the same US timezone.
