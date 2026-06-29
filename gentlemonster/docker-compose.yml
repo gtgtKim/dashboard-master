@@ -1,0 +1,48 @@
+services:
+  app:
+    build: .
+    image: gentlemonster-main-scrapping:local
+    init: true
+    shm_size: "1gb"
+    ports:
+      - "${APP_BIND:-127.0.0.1}:${APP_PORT:-4173}:4173"
+    environment:
+      HOST: 0.0.0.0
+      PORT: 4173
+      TZ: Asia/Seoul
+      BASE_PATH: ${BASE_PATH:-}
+      GA4_METRICS_ENABLED: ${GA4_METRICS_ENABLED:-false}
+      DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD:-jellyfish}
+      DASHBOARD_AUTH_SECRET: ${DASHBOARD_AUTH_SECRET:-change-this-dashboard-secret}
+      DASHBOARD_REQUIRE_HTTPS: ${DASHBOARD_REQUIRE_HTTPS:-false}
+      DASHBOARD_COOKIE_DAYS: ${DASHBOARD_COOKIE_DAYS:-7}
+    volumes:
+      - ./snapshots:/app/snapshots
+    command: npm run serve
+
+  scheduler:
+    image: gentlemonster-main-scrapping:local
+    restart: unless-stopped
+    init: true
+    shm_size: "1gb"
+    environment:
+      TZ: Asia/Seoul
+      CAPTURE_SCHEDULE_HOUR: 10
+      CAPTURE_SCHEDULE_MINUTE: 0
+      CAPTURE_RETRY_ATTEMPTS: 6
+      CAPTURE_RETRY_DELAY_MS: 600000
+    volumes:
+      - ./snapshots:/app/snapshots
+    command: npm run schedule
+
+  capture:
+    image: gentlemonster-main-scrapping:local
+    profiles:
+      - capture
+    init: true
+    shm_size: "1gb"
+    environment:
+      TZ: Asia/Seoul
+    volumes:
+      - ./snapshots:/app/snapshots
+    command: npm run capture:retry

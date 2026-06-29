@@ -1,0 +1,8 @@
+.DS_Store
+.env
+*.log
+node_modules/
+snapshots/
+skt-otw-ua-*.json
+*service-account*.json
+
