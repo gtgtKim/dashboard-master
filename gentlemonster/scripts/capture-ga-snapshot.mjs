@@ -15,6 +15,7 @@ const TARGET_LOCALE = process.env.TARGET_LOCALE || 'en-US';
 const TARGET_TIMEZONE = process.env.TARGET_TIMEZONE || process.env.TZ || 'America/New_York';
 const TRACKING_ATTRIBUTE_SELECTOR = '[data-category], [data-action], [data-area], [data-label]';
 const GA4_METRICS_ENABLED = process.env.GA4_METRICS_ENABLED === 'true';
+const REBUILD_CATALOG_ONLY = process.argv.includes('--rebuild-catalog');
 
 const targets = [
   {
@@ -42,6 +43,12 @@ const targets = [
     },
   },
 ];
+
+if (REBUILD_CATALOG_ONLY) {
+  await rebuildSnapshotCatalog(OUTPUT_ROOT);
+  console.log(JSON.stringify({ status: 'ok', rebuilt: path.join(OUTPUT_ROOT, 'index.html') }, null, 2));
+  process.exit(0);
+}
 
 const browser = await chromium.launch({
   headless: true,
@@ -4313,7 +4320,7 @@ function renderSnapshotCatalog() {
           </section>
           <section class="help-section">
             <h3>GA4 데이터</h3>
-            <p>조회 기간과 페이지에 맞춰 GA4 Data API에서 데이터를 다시 불러옵니다. PC는 desktop, MO는 mobile 기준이며, add_to_wishlist의 카운트는 itemName 디멘션과 Item quantity 메트릭으로 조회합니다.</p>
+            <p>조회 기간과 페이지에 맞춰 GA4 Data API에서 데이터를 다시 불러옵니다. PC는 desktop, MO는 mobile 기준이며, add_to_wishlist의 개별 상품 행은 이벤트 수를 표시하지 않고 그룹 행에 전체 eventCount만 표시합니다.</p>
           </section>
           <section class="help-section">
             <h3>좌우 클릭 연동</h3>
@@ -4876,6 +4883,7 @@ function renderSnapshotCatalog() {
           totals: payload.totals || sumMetrics(periodRecords.map((record) => record.ga4)),
           rowCount: payload.rowCount || 0,
           eventCategory: payload.eventCategory || '',
+          groupMetrics: payload.groupMetrics || {},
           warnings: Array.isArray(payload.warnings) ? payload.warnings : [],
         };
       } catch (error) {
@@ -5082,14 +5090,14 @@ function renderSnapshotCatalog() {
                     '<td><code>' + escapeHtml(record.ga_area || '') + '</code></td>' +
                     '<td><code>' + escapeHtml(record.ga_label) + '</code>' + occurrenceBadge + '</td>' +
                     '<td><span class="period">' + escapeHtml(formatPeriods(record.periods)) + '</span></td>' +
-                    '<td class="metric">' + formatMetric(record.ga4.eventCount, 'eventCount') + '</td>' +
+                    '<td class="metric">' + formatRecordMetric(record, 'eventCount') + '</td>' +
                     '<td class="metric">' + formatMetric(record.ga4.sessions, 'sessions') + '</td>' +
                     '<td class="metric">' + formatMetric(record.ga4.activeUsers, 'activeUsers') + '</td>' +
                   '</tr>';
                 })
                 .join('');
 
-          const groupMetrics = sumMetrics(group.records.map((record) => record.ga4));
+          const groupMetrics = metricsForGroup(group);
           return '<tr class="group-row" data-group-id="' + escapeHtml(group.id) + '">' +
             '<td colspan="5"><button class="group-toggle" type="button">' +
             '<span class="group-state">' + (collapsed ? '[+]' : '[-]') + '</span>' +
@@ -6247,10 +6255,33 @@ function renderSnapshotCatalog() {
     function formatMetric(value, metricName) {
       if (ga4Status.state === 'loading') return '...';
       if (ga4Status.state === 'error') return '-';
+      if (value === null || value === undefined) return '-';
       const number = Number(value || 0);
       const total = Number(ga4Status.totals?.[metricName] || 0);
       const percent = total > 0 ? Math.round((number / total) * 100) : 0;
       return formatNumber(number) + ' (' + percent + '%)';
+    }
+
+    function formatRecordMetric(record, metricName) {
+      if (metricName === 'eventCount' && isWishlistRecord(record)) return '-';
+      return formatMetric(record.ga4?.[metricName], metricName);
+    }
+
+    function metricsForGroup(group) {
+      const metrics = sumMetrics(group.records.map((record) => record.ga4));
+      if (isWishlistGroup(group)) {
+        const wishlistMetrics = ga4Status.groupMetrics?.wishlist || {};
+        metrics.eventCount = Number(wishlistMetrics.eventCount || 0);
+      }
+      return metrics;
+    }
+
+    function isWishlistRecord(record) {
+      return record?.ga_action === 'add_to_wishlist' || record?.ga_category === 'ecommerce';
+    }
+
+    function isWishlistGroup(group) {
+      return group?.action === 'add_to_wishlist' || group?.category === 'ecommerce';
     }
 
     function formatNumber(value) {

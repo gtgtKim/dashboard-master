@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "capture": "node scripts/capture-ga-snapshot.mjs",
+    "catalog:rebuild": "node scripts/capture-ga-snapshot.mjs --rebuild-catalog",
     "capture:retry": "node scripts/capture-with-retry.mjs",
     "schedule": "node scripts/schedule-capture.mjs",
     "serve": "node scripts/serve-snapshots.mjs"

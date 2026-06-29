@@ -14,7 +14,6 @@ services:
       GA4_METRICS_ENABLED: ${GA4_METRICS_ENABLED:-true}
       GA4_ACCOUNT_ID: ${GA4_ACCOUNT_ID:-49553718}
       GA4_PROPERTY_ID: ${GA4_PROPERTY_ID:-307903899}
-      GA4_WISHLIST_ITEM_QUANTITY_METRIC: ${GA4_WISHLIST_ITEM_QUANTITY_METRIC:-itemQuantity}
       GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/ga4-key.json
       DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD:-jellyfish}
       DASHBOARD_AUTH_SECRET: ${DASHBOARD_AUTH_SECRET:-change-this-dashboard-secret}
@@ -40,7 +39,6 @@ services:
       GA4_METRICS_ENABLED: ${GA4_METRICS_ENABLED:-true}
       GA4_ACCOUNT_ID: ${GA4_ACCOUNT_ID:-49553718}
       GA4_PROPERTY_ID: ${GA4_PROPERTY_ID:-307903899}
-      GA4_WISHLIST_ITEM_QUANTITY_METRIC: ${GA4_WISHLIST_ITEM_QUANTITY_METRIC:-itemQuantity}
     volumes:
       - ./snapshots:/app/snapshots
     command: npm run schedule
@@ -57,7 +55,6 @@ services:
       GA4_METRICS_ENABLED: ${GA4_METRICS_ENABLED:-true}
       GA4_ACCOUNT_ID: ${GA4_ACCOUNT_ID:-49553718}
       GA4_PROPERTY_ID: ${GA4_PROPERTY_ID:-307903899}
-      GA4_WISHLIST_ITEM_QUANTITY_METRIC: ${GA4_WISHLIST_ITEM_QUANTITY_METRIC:-itemQuantity}
     volumes:
       - ./snapshots:/app/snapshots
     command: npm run capture:retry

@@ -16,9 +16,6 @@ export const GA4_CONFIG = {
     pagePath: process.env.GA4_DIMENSION_PAGE_PATH || 'pagePath',
     itemName: process.env.GA4_DIMENSION_ITEM_NAME || 'itemName',
   },
-  metrics: {
-    wishlistItemQuantity: process.env.GA4_WISHLIST_ITEM_QUANTITY_METRIC || 'itemQuantity',
-  },
   events: {
     homepage: process.env.GA4_EVENT_HOMEPAGE || 'click_homepage',
     navigation: process.env.GA4_EVENT_NAVIGATION || 'click_nav',
@@ -51,15 +48,12 @@ export async function queryGa4Metrics({ targetId, startDate, endDate }) {
 
   const client = getGa4Client(keyFilename);
   const deviceCategory = deviceCategoryForTargetId(targetId);
-  const warnings = [];
   const [
     homepageResponse,
     navigationResponse,
-    wishlistItemQuantityResponse,
     wishlistItemResponse,
     allEventsTotalResponse,
-    homepageNavigationTotalResponse,
-    wishlistQuantityTotalResponse,
+    wishlistTotalResponse,
   ] = await Promise.all([
     runRowsReport(client, {
       startDate,
@@ -82,14 +76,6 @@ export async function queryGa4Metrics({ targetId, startDate, endDate }) {
       ],
       dimensionFilter: navigationFilter(deviceCategory),
     }),
-    safeRunRowsReport(client, {
-      label: `wishlist ${GA4_CONFIG.metrics.wishlistItemQuantity} by ${GA4_CONFIG.dimensions.itemName}`,
-      startDate,
-      endDate,
-      dimensions: [GA4_CONFIG.dimensions.itemName],
-      metrics: [{ name: GA4_CONFIG.metrics.wishlistItemQuantity }],
-      dimensionFilter: wishlistFilter(deviceCategory),
-    }),
     runRowsReport(client, {
       startDate,
       endDate,
@@ -105,13 +91,6 @@ export async function queryGa4Metrics({ targetId, startDate, endDate }) {
     runTotalsReport(client, {
       startDate,
       endDate,
-      dimensionFilter: homepageNavigationFilter(deviceCategory),
-    }),
-    safeRunTotalsReport(client, {
-      label: `wishlist total ${GA4_CONFIG.metrics.wishlistItemQuantity}`,
-      startDate,
-      endDate,
-      metrics: [{ name: GA4_CONFIG.metrics.wishlistItemQuantity }],
       dimensionFilter: wishlistFilter(deviceCategory),
     }),
   ]);
@@ -119,20 +98,10 @@ export async function queryGa4Metrics({ targetId, startDate, endDate }) {
   const metrics = {};
   mergeHomepageMetrics(metrics, homepageResponse);
   mergeNavigationMetrics(metrics, navigationResponse);
-  mergeWishlistQuantityMetrics(metrics, wishlistItemQuantityResponse);
   mergeWishlistItemMetrics(metrics, wishlistItemResponse);
 
-  collectReportWarning(warnings, wishlistItemQuantityResponse);
-  collectReportWarning(warnings, wishlistQuantityTotalResponse);
-
   const allEventsTotals = metricsFromRow(allEventsTotalResponse.rows?.[0]);
-  const homepageNavigationTotals = metricsFromRow(homepageNavigationTotalResponse.rows?.[0]);
-  const wishlistQuantityTotal = firstMetricFromRow(wishlistQuantityTotalResponse.rows?.[0]);
-  const totals = {
-    eventCount: homepageNavigationTotals.eventCount + wishlistQuantityTotal,
-    sessions: allEventsTotals.sessions,
-    activeUsers: allEventsTotals.activeUsers,
-  };
+  const wishlistTotals = metricsFromRow(wishlistTotalResponse.rows?.[0]);
 
   return {
     propertyId: GA4_CONFIG.propertyId,
@@ -142,14 +111,15 @@ export async function queryGa4Metrics({ targetId, startDate, endDate }) {
     endDate,
     deviceCategory,
     eventNames: Object.values(GA4_CONFIG.events),
-    wishlistQuantityMetric: GA4_CONFIG.metrics.wishlistItemQuantity,
     metrics,
-    totals,
-    warnings,
+    groupMetrics: {
+      wishlist: wishlistTotals,
+    },
+    totals: allEventsTotals,
+    warnings: [],
     rowCount:
       Number(homepageResponse.rows?.length || 0) +
       Number(navigationResponse.rows?.length || 0) +
-      Number(wishlistItemQuantityResponse.rows?.length || 0) +
       Number(wishlistItemResponse.rows?.length || 0),
   };
 }
@@ -176,28 +146,6 @@ async function runTotalsReport(client, { startDate, endDate, dimensionFilter }) 
   return response;
 }
 
-async function safeRunRowsReport(client, { label, ...params }) {
-  try {
-    return await runRowsReport(client, params);
-  } catch (error) {
-    return emptyReportWithError(label, error);
-  }
-}
-
-async function safeRunTotalsReport(client, { label, startDate, endDate, dimensionFilter, metrics }) {
-  try {
-    const [response] = await client.runReport({
-      property: `properties/${GA4_CONFIG.propertyId}`,
-      dateRanges: [{ startDate, endDate }],
-      metrics,
-      dimensionFilter,
-    });
-    return response;
-  } catch (error) {
-    return emptyReportWithError(label, error);
-  }
-}
-
 function mergeHomepageMetrics(metrics, response) {
   for (const row of response.rows || []) {
     const [category = '', action = '', area = '', label = ''] = dimensionsFromRow(row);
@@ -214,27 +162,13 @@ function mergeNavigationMetrics(metrics, response) {
   }
 }
 
-function mergeWishlistQuantityMetrics(metrics, response) {
-  for (const row of response.rows || []) {
-    const [itemName = ''] = dimensionsFromRow(row);
-    if (!itemName) continue;
-    const key = makeGa4MetricKey('ecommerce', GA4_CONFIG.events.wishlist, '', itemName);
-    const rowMetrics = {
-      eventCount: numberFromMetric(row.metricValues?.[0]?.value),
-      sessions: 0,
-      activeUsers: 0,
-    };
-    metrics[key] = sumGa4Metrics(metrics[key], rowMetrics);
-  }
-}
-
 function mergeWishlistItemMetrics(metrics, response) {
   for (const row of response.rows || []) {
     const [itemName = ''] = dimensionsFromRow(row);
     if (!itemName) continue;
     const key = makeGa4MetricKey('ecommerce', GA4_CONFIG.events.wishlist, '', itemName);
     const rowMetrics = {
-      eventCount: 0,
+      eventCount: null,
       sessions: numberFromMetric(row.metricValues?.[0]?.value),
       activeUsers: numberFromMetric(row.metricValues?.[1]?.value),
     };
@@ -285,20 +219,6 @@ function allEventsTotalFilter(deviceCategory) {
   ]);
 }
 
-function homepageNavigationFilter(deviceCategory) {
-  return andFilter([
-    exactFilter(GA4_CONFIG.dimensions.deviceCategory, deviceCategory),
-    {
-      orGroup: {
-        expressions: [
-          homepageFilter(deviceCategory),
-          navigationFilter(deviceCategory),
-        ],
-      },
-    },
-  ]);
-}
-
 function andFilter(expressions) {
   return { andGroup: { expressions } };
 }
@@ -321,26 +241,6 @@ function metricsFromRow(row) {
     eventCount: numberFromMetric(row?.metricValues?.[0]?.value),
     sessions: numberFromMetric(row?.metricValues?.[1]?.value),
     activeUsers: numberFromMetric(row?.metricValues?.[2]?.value),
-  };
-}
-
-function firstMetricFromRow(row) {
-  return numberFromMetric(row?.metricValues?.[0]?.value);
-}
-
-function collectReportWarning(warnings, response) {
-  if (!response?.warning) return;
-  warnings.push(response.warning);
-}
-
-function emptyReportWithError(label, error) {
-  return {
-    rows: [],
-    rowCount: 0,
-    warning: {
-      label,
-      error: error instanceof Error ? error.message : String(error),
-    },
   };
 }
 
