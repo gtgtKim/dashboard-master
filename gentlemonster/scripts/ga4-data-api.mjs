@@ -5,18 +5,29 @@ import path from 'node:path';
 const { BetaAnalyticsDataClient } = analyticsData;
 
 export const GA4_CONFIG = {
-  propertyId: process.env.GA4_PROPERTY_ID || '',
-  accountId: process.env.GA4_ACCOUNT_ID || '',
-  eventName: process.env.GA4_EVENT_NAME || 'click',
+  propertyId: process.env.GA4_PROPERTY_ID || '307903899',
+  accountId: process.env.GA4_ACCOUNT_ID || '49553718',
   dimensions: {
-    eventCategory: process.env.GA4_DIMENSION_EVENT_CATEGORY || 'customEvent:event_category',
-    eventAction: process.env.GA4_DIMENSION_EVENT_ACTION || 'customEvent:event_action',
-    eventLabel: process.env.GA4_DIMENSION_EVENT_LABEL || 'customEvent:event_label',
-    hostname: process.env.GA4_DIMENSION_HOSTNAME || 'hostName',
+    dataCategory: process.env.GA4_DIMENSION_DATA_CATEGORY || 'customEvent:dataCategory',
+    dataAction: process.env.GA4_DIMENSION_DATA_ACTION || 'customEvent:dataAction',
+    dataArea: process.env.GA4_DIMENSION_DATA_AREA || 'customEvent:dataArea',
+    dataLabel: process.env.GA4_DIMENSION_DATA_LABEL || 'customEvent:dataLabel',
+    deviceCategory: process.env.GA4_DIMENSION_DEVICE_CATEGORY || 'deviceCategory',
+    pagePath: process.env.GA4_DIMENSION_PAGE_PATH || 'pagePath',
+    itemName: process.env.GA4_DIMENSION_ITEM_NAME || 'itemName',
+    eventItemName: process.env.GA4_DIMENSION_EVENT_ITEM_NAME || 'customEvent:item_name',
   },
-  mobileHostname: process.env.GA4_MOBILE_HOSTNAME || '',
+  events: {
+    homepage: process.env.GA4_EVENT_HOMEPAGE || 'click_homepage',
+    navigation: process.env.GA4_EVENT_NAVIGATION || 'click_nav',
+    wishlist: process.env.GA4_EVENT_WISHLIST || 'add_to_wishlist',
+  },
+  homepageCategory: process.env.GA4_HOMEPAGE_CATEGORY || 'Homepage',
+  navigationCategory: process.env.GA4_NAVIGATION_CATEGORY || 'Navigation',
+  wishlistPagePath: process.env.GA4_WISHLIST_PAGE_PATH || '/us/en',
 };
 
+const METRICS_SPEC = [{ name: 'eventCount' }, { name: 'sessions' }, { name: 'activeUsers' }];
 let cachedClient = null;
 let cachedKeyFilename = null;
 
@@ -36,93 +47,198 @@ export async function queryGa4Metrics({ targetId, startDate, endDate }) {
   }
 
   const client = getGa4Client(keyFilename);
-  const eventCategory = ga4CategoryForTargetId(targetId);
-  const hostname = ga4HostnameForTargetId(targetId);
-  const dimensionFilter = {
-    andGroup: {
-      expressions: [
-        {
-          filter: {
-            fieldName: 'eventName',
-            stringFilter: { matchType: 'EXACT', value: GA4_CONFIG.eventName },
-          },
-        },
-      ],
-    },
-  };
-
-  if (eventCategory) {
-    dimensionFilter.andGroup.expressions.push({
-      filter: {
-        fieldName: GA4_CONFIG.dimensions.eventCategory,
-        stringFilter: { matchType: 'EXACT', value: eventCategory },
-      },
-    });
-  }
-
-  if (hostname) {
-    dimensionFilter.andGroup.expressions.push({
-      filter: {
-        fieldName: GA4_CONFIG.dimensions.hostname,
-        stringFilter: { matchType: 'EXACT', value: hostname },
-      },
-    });
-  }
-
-  const metricsSpec = [{ name: 'eventCount' }, { name: 'sessions' }, { name: 'activeUsers' }];
-  const [[response], [totalResponse]] = await Promise.all([
-    client.runReport({
-      property: `properties/${GA4_CONFIG.propertyId}`,
-      dateRanges: [{ startDate, endDate }],
+  const deviceCategory = deviceCategoryForTargetId(targetId);
+  const [homepageResponse, navigationResponse, wishlistEventParamResponse, wishlistItemResponse, totalResponse] = await Promise.all([
+    runRowsReport(client, {
+      startDate,
+      endDate,
       dimensions: [
-        { name: GA4_CONFIG.dimensions.eventAction },
-        { name: GA4_CONFIG.dimensions.eventLabel },
+        GA4_CONFIG.dimensions.dataCategory,
+        GA4_CONFIG.dimensions.dataAction,
+        GA4_CONFIG.dimensions.dataArea,
+        GA4_CONFIG.dimensions.dataLabel,
       ],
-      metrics: metricsSpec,
-      dimensionFilter,
-      limit: 250000,
+      dimensionFilter: homepageFilter(deviceCategory),
     }),
-    client.runReport({
-      property: `properties/${GA4_CONFIG.propertyId}`,
-      dateRanges: [{ startDate, endDate }],
-      metrics: metricsSpec,
-      dimensionFilter,
+    runRowsReport(client, {
+      startDate,
+      endDate,
+      dimensions: [
+        GA4_CONFIG.dimensions.dataCategory,
+        GA4_CONFIG.dimensions.dataAction,
+        GA4_CONFIG.dimensions.dataLabel,
+      ],
+      dimensionFilter: navigationFilter(deviceCategory),
+    }),
+    runRowsReport(client, {
+      startDate,
+      endDate,
+      dimensions: [GA4_CONFIG.dimensions.eventItemName],
+      dimensionFilter: wishlistFilter(deviceCategory),
+    }),
+    runRowsReport(client, {
+      startDate,
+      endDate,
+      dimensions: [GA4_CONFIG.dimensions.itemName],
+      metrics: [{ name: 'sessions' }, { name: 'activeUsers' }],
+      dimensionFilter: wishlistFilter(deviceCategory),
+    }),
+    runTotalsReport(client, {
+      startDate,
+      endDate,
+      dimensionFilter: totalFilter(deviceCategory),
     }),
   ]);
 
   const metrics = {};
-
-  for (const row of response.rows || []) {
-    const [action = '', label = ''] = (row.dimensionValues || []).map((value) => value.value || '');
-    const key = makeGa4MetricKey(action || '(missing)', label);
-    const rowMetrics = {
-      eventCount: numberFromMetric(row.metricValues?.[0]?.value),
-      sessions: numberFromMetric(row.metricValues?.[1]?.value),
-      activeUsers: numberFromMetric(row.metricValues?.[2]?.value),
-    };
-
-    metrics[key] = sumGa4Metrics(metrics[key], rowMetrics);
-  }
+  mergeHomepageMetrics(metrics, homepageResponse);
+  mergeNavigationMetrics(metrics, navigationResponse);
+  mergeWishlistEventParamMetrics(metrics, wishlistEventParamResponse);
+  mergeWishlistItemMetrics(metrics, wishlistItemResponse);
 
   const totalRow = totalResponse.rows?.[0];
-  const totals = {
-    eventCount: numberFromMetric(totalRow?.metricValues?.[0]?.value),
-    sessions: numberFromMetric(totalRow?.metricValues?.[1]?.value),
-    activeUsers: numberFromMetric(totalRow?.metricValues?.[2]?.value),
-  };
+  const totals = metricsFromRow(totalRow);
 
   return {
     propertyId: GA4_CONFIG.propertyId,
     accountId: GA4_CONFIG.accountId,
-    eventName: GA4_CONFIG.eventName,
-    eventCategory,
-    hostname,
+    targetId,
     startDate,
     endDate,
-    targetId,
+    deviceCategory,
+    eventNames: Object.values(GA4_CONFIG.events),
     metrics,
     totals,
-    rowCount: response.rows?.length || 0,
+    rowCount:
+      Number(homepageResponse.rows?.length || 0) +
+      Number(navigationResponse.rows?.length || 0) +
+      Number(wishlistEventParamResponse.rows?.length || 0) +
+      Number(wishlistItemResponse.rows?.length || 0),
+  };
+}
+
+async function runRowsReport(client, { startDate, endDate, dimensions, dimensionFilter, metrics = METRICS_SPEC }) {
+  const [response] = await client.runReport({
+    property: `properties/${GA4_CONFIG.propertyId}`,
+    dateRanges: [{ startDate, endDate }],
+    dimensions: dimensions.map((name) => ({ name })),
+    metrics,
+    dimensionFilter,
+    limit: 250000,
+  });
+  return response;
+}
+
+async function runTotalsReport(client, { startDate, endDate, dimensionFilter }) {
+  const [response] = await client.runReport({
+    property: `properties/${GA4_CONFIG.propertyId}`,
+    dateRanges: [{ startDate, endDate }],
+    metrics: METRICS_SPEC,
+    dimensionFilter,
+  });
+  return response;
+}
+
+function mergeHomepageMetrics(metrics, response) {
+  for (const row of response.rows || []) {
+    const [category = '', action = '', area = '', label = ''] = dimensionsFromRow(row);
+    const key = makeGa4MetricKey(category, action, area, label);
+    metrics[key] = sumGa4Metrics(metrics[key], metricsFromRow(row));
+  }
+}
+
+function mergeNavigationMetrics(metrics, response) {
+  for (const row of response.rows || []) {
+    const [category = '', action = '', label = ''] = dimensionsFromRow(row);
+    const key = makeGa4MetricKey(category, action, '', label);
+    metrics[key] = sumGa4Metrics(metrics[key], metricsFromRow(row));
+  }
+}
+
+function mergeWishlistEventParamMetrics(metrics, response) {
+  for (const row of response.rows || []) {
+    const [itemName = ''] = dimensionsFromRow(row);
+    if (!itemName) continue;
+    const key = makeGa4MetricKey('ecommerce', GA4_CONFIG.events.wishlist, '', itemName);
+    metrics[key] = sumGa4Metrics(metrics[key], metricsFromRow(row));
+  }
+}
+
+function mergeWishlistItemMetrics(metrics, response) {
+  for (const row of response.rows || []) {
+    const [itemName = ''] = dimensionsFromRow(row);
+    if (!itemName) continue;
+    const key = makeGa4MetricKey('ecommerce', GA4_CONFIG.events.wishlist, '', itemName);
+    const rowMetrics = {
+      eventCount: 0,
+      sessions: numberFromMetric(row.metricValues?.[0]?.value),
+      activeUsers: numberFromMetric(row.metricValues?.[1]?.value),
+    };
+    metrics[key] = sumGa4Metrics(metrics[key], rowMetrics);
+  }
+}
+
+function homepageFilter(deviceCategory) {
+  return andFilter([
+    exactFilter('eventName', GA4_CONFIG.events.homepage),
+    exactFilter(GA4_CONFIG.dimensions.deviceCategory, deviceCategory),
+    exactFilter(GA4_CONFIG.dimensions.dataCategory, GA4_CONFIG.homepageCategory),
+  ]);
+}
+
+function navigationFilter(deviceCategory) {
+  return andFilter([
+    exactFilter('eventName', GA4_CONFIG.events.navigation),
+    exactFilter(GA4_CONFIG.dimensions.deviceCategory, deviceCategory),
+    exactFilter(GA4_CONFIG.dimensions.dataCategory, GA4_CONFIG.navigationCategory),
+  ]);
+}
+
+function wishlistFilter(deviceCategory) {
+  return andFilter([
+    exactFilter('eventName', GA4_CONFIG.events.wishlist),
+    exactFilter(GA4_CONFIG.dimensions.deviceCategory, deviceCategory),
+    exactFilter(GA4_CONFIG.dimensions.pagePath, GA4_CONFIG.wishlistPagePath),
+  ]);
+}
+
+function totalFilter(deviceCategory) {
+  return andFilter([
+    exactFilter(GA4_CONFIG.dimensions.deviceCategory, deviceCategory),
+    {
+      orGroup: {
+        expressions: [
+          homepageFilter(deviceCategory),
+          navigationFilter(deviceCategory),
+          wishlistFilter(deviceCategory),
+        ],
+      },
+    },
+  ]);
+}
+
+function andFilter(expressions) {
+  return { andGroup: { expressions } };
+}
+
+function exactFilter(fieldName, value) {
+  return {
+    filter: {
+      fieldName,
+      stringFilter: { matchType: 'EXACT', value: String(value || '') },
+    },
+  };
+}
+
+function dimensionsFromRow(row) {
+  return (row.dimensionValues || []).map((value) => cleanDimensionValue(value.value || ''));
+}
+
+function metricsFromRow(row) {
+  return {
+    eventCount: numberFromMetric(row?.metricValues?.[0]?.value),
+    sessions: numberFromMetric(row?.metricValues?.[1]?.value),
+    activeUsers: numberFromMetric(row?.metricValues?.[2]?.value),
   };
 }
 
@@ -132,24 +248,27 @@ export async function findGa4CredentialFile() {
   }
 
   const entries = await fs.readdir(process.cwd()).catch(() => []);
-  const keyFile = entries.find((entry) => /(ga4|analytics|service-account).*\.json$/i.test(entry));
+  const keyFile = entries.find((entry) => /(ga4|analytics|service-account|gyutae-test-project).*\.json$/i.test(entry));
   return keyFile ? path.resolve(keyFile) : null;
 }
 
-export function ga4CategoryForTargetId(targetId) {
-  if (String(targetId).includes('mobile')) {
-    return process.env.GA4_MOBILE_EVENT_CATEGORY || process.env.GA4_EVENT_CATEGORY || '';
+export function deviceCategoryForTargetId(targetId) {
+  return String(targetId).includes('mobile') ? 'mobile' : 'desktop';
+}
+
+export function makeGa4MetricKey(category, action, area, label) {
+  const normalizedCategory = category || '(missing)';
+  const normalizedAction = action || '(missing)';
+
+  if (normalizedAction === GA4_CONFIG.events.wishlist || normalizedCategory === 'ecommerce') {
+    return ['wishlist', label || ''].map(encodeMetricPart).join('::');
   }
 
-  return process.env.GA4_PC_EVENT_CATEGORY || process.env.GA4_EVENT_CATEGORY || '';
-}
+  if (normalizedCategory === GA4_CONFIG.navigationCategory) {
+    return ['navigation', normalizedCategory, normalizedAction, label || ''].map(encodeMetricPart).join('::');
+  }
 
-export function ga4HostnameForTargetId(targetId) {
-  return String(targetId).includes('mobile') ? GA4_CONFIG.mobileHostname : null;
-}
-
-export function makeGa4MetricKey(action, label) {
-  return `${encodeURIComponent(action || '(missing)')}::${encodeURIComponent(label || '')}`;
+  return ['homepage', normalizedCategory, normalizedAction, area || '', label || ''].map(encodeMetricPart).join('::');
 }
 
 export function emptyGa4Metrics() {
@@ -159,6 +278,15 @@ export function emptyGa4Metrics() {
 export function numberFromMetric(value) {
   const number = Number(value || 0);
   return Number.isFinite(number) ? number : 0;
+}
+
+function encodeMetricPart(value) {
+  return encodeURIComponent(value || '');
+}
+
+function cleanDimensionValue(value) {
+  const text = String(value || '');
+  return text === 'no value' || text === '(not set)' ? '' : text;
 }
 
 function getGa4Client(keyFilename) {

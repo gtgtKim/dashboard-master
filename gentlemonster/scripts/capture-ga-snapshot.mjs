@@ -3582,7 +3582,12 @@ async function rebuildSnapshotCatalog(root) {
           product_sku: element.product_sku || '',
           product_price: element.product_price || '',
           product_slug: element.product_slug || '',
-          ga4MetricKey: makeGa4MetricKey(element.ga_action || '(missing)', element.ga_label || ''),
+          ga4MetricKey: makeGa4MetricKey(
+            element.ga_category || element.data_category || '(missing)',
+            element.ga_action || element.data_action || '(missing)',
+            element.ga_area || element.data_area || '',
+            element.ga_label || element.data_label || '',
+          ),
           href: element.href || null,
           index: element.index || null,
           sourceIndex: element.sourceIndex || null,
@@ -4055,7 +4060,7 @@ function renderSnapshotCatalog() {
 
     table {
       width: 100%;
-      min-width: 760px;
+      min-width: 1080px;
       border-collapse: collapse;
       font-size: 12px;
       table-layout: fixed;
@@ -4366,7 +4371,10 @@ function renderSnapshotCatalog() {
               <col style="width: 150px">
               <col style="width: 120px">
               <col style="width: 250px">
-              <col style="width: 120px">
+              <col style="width: 150px">
+              <col style="width: 110px">
+              <col style="width: 110px">
+              <col style="width: 110px">
             </colgroup>
             <thead>
               <tr>
@@ -4375,6 +4383,9 @@ function renderSnapshotCatalog() {
                 <th>data-area<span class="col-resizer" data-col-index="2"></span></th>
                 <th>data-label<span class="col-resizer" data-col-index="3"></span></th>
                 <th>유지 기간<span class="col-resizer" data-col-index="4"></span></th>
+                <th>이벤트 수<span class="col-resizer" data-col-index="5"></span></th>
+                <th>세션 수<span class="col-resizer" data-col-index="6"></span></th>
+                <th>사용자 수<span class="col-resizer" data-col-index="7"></span></th>
               </tr>
             </thead>
             <tbody id="periodRows"></tbody>
@@ -4593,7 +4604,7 @@ function renderSnapshotCatalog() {
 
     function installColumnResizers() {
       const cols = Array.from(tableColGroup.children);
-      const minWidths = [120, 160, 120, 90, 90, 90];
+      const minWidths = [100, 120, 100, 160, 120, 90, 90, 90];
 
       for (const handle of document.querySelectorAll('.col-resizer')) {
         handle.addEventListener('pointerdown', (event) => {
@@ -4642,7 +4653,7 @@ function renderSnapshotCatalog() {
         return sum + (Number.parseFloat(col.style.width) || col.getBoundingClientRect().width || 0);
       }, 0);
       const visibleWidth = Math.max(0, tableWrap.clientWidth - 1);
-      const nextWidth = Math.max(760, Math.ceil(totalWidth), visibleWidth);
+      const nextWidth = Math.max(1080, Math.ceil(totalWidth), visibleWidth);
       gaTable.style.width = nextWidth + 'px';
       gaTable.style.minWidth = nextWidth + 'px';
     }
@@ -4909,7 +4920,7 @@ function renderSnapshotCatalog() {
           const area = element.ga_area || element.data_area || '';
           const label = element.ga_label || element.data_label || '';
           const key = element.periodKey || element.stableKey || [targetId, category, action, area, label, element.href].join('|');
-          const metricKey = element.ga4MetricKey || ga4MetricKey(action, label);
+          const metricKey = ga4MetricKey(category, action, area, label);
           let record = byKey.get(key);
           if (!record) {
             record = {
@@ -5068,19 +5079,28 @@ function renderSnapshotCatalog() {
                     '<td><code>' + escapeHtml(record.ga_area || '') + '</code></td>' +
                     '<td><code>' + escapeHtml(record.ga_label) + '</code>' + occurrenceBadge + '</td>' +
                     '<td><span class="period">' + escapeHtml(formatPeriods(record.periods)) + '</span></td>' +
+                    '<td class="metric">' + formatMetric(record.ga4.eventCount, 'eventCount') + '</td>' +
+                    '<td class="metric">' + formatMetric(record.ga4.sessions, 'sessions') + '</td>' +
+                    '<td class="metric">' + formatMetric(record.ga4.activeUsers, 'activeUsers') + '</td>' +
                   '</tr>';
                 })
                 .join('');
 
+          const groupMetrics = sumMetrics(group.records.map((record) => record.ga4));
           return '<tr class="group-row" data-group-id="' + escapeHtml(group.id) + '">' +
             '<td colspan="5"><button class="group-toggle" type="button">' +
             '<span class="group-state">' + (collapsed ? '[+]' : '[-]') + '</span>' +
             '<span>' + escapeHtml(group.label) + '</span>' +
             '<small>' + group.records.length + ' items</small>' +
             '</button></td>' +
+            '<td class="metric">' + formatMetric(groupMetrics.eventCount, 'eventCount') + '</td>' +
+            '<td class="metric">' + formatMetric(groupMetrics.sessions, 'sessions') + '</td>' +
+            '<td class="metric">' + formatMetric(groupMetrics.activeUsers, 'activeUsers') + '</td>' +
             '</tr>' + rows;
         })
         .join('');
+
+      if (GA4_METRICS_ENABLED) periodRows.insertAdjacentHTML('afterbegin', renderTotalRow());
 
       for (const row of periodRows.querySelectorAll('tr.group-row')) {
         row.addEventListener('click', () => {
@@ -5104,12 +5124,12 @@ function renderSnapshotCatalog() {
     }
 
     function renderStatusRow(message) {
-      periodRows.innerHTML = '<tr class="status-row"><td colspan="5">' + escapeHtml(message) + '</td></tr>';
+      periodRows.innerHTML = '<tr class="status-row"><td colspan="8">' + escapeHtml(message) + '</td></tr>';
     }
 
     function renderTotalRow() {
       return '<tr class="total-row">' +
-        '<td colspan="3"><strong>총합</strong><small>click</small></td>' +
+        '<td colspan="5"><strong>총합</strong><small>click_homepage · click_nav · add_to_wishlist</small></td>' +
         '<td class="metric">' + formatMetric(ga4Status.totals.eventCount, 'eventCount') + '</td>' +
         '<td class="metric">' + formatMetric(ga4Status.totals.sessions, 'sessions') + '</td>' +
         '<td class="metric">' + formatMetric(ga4Status.totals.activeUsers, 'activeUsers') + '</td>' +
@@ -6192,8 +6212,20 @@ function renderSnapshotCatalog() {
       return periods.map((period) => period.start + ' ~ ' + period.end).join(', ');
     }
 
-    function ga4MetricKey(action, label) {
-      return encodeURIComponent(action || '(missing)') + '::' + encodeURIComponent(label || '');
+    function ga4MetricKey(category, action, area, label) {
+      const normalizedCategory = category || '(missing)';
+      const normalizedAction = action || '(missing)';
+      if (normalizedAction === 'add_to_wishlist' || normalizedCategory === 'ecommerce') {
+        return ['wishlist', label || ''].map(encodeMetricPart).join('::');
+      }
+      if (normalizedCategory === 'Navigation') {
+        return ['navigation', normalizedCategory, normalizedAction, label || ''].map(encodeMetricPart).join('::');
+      }
+      return ['homepage', normalizedCategory, normalizedAction, area || '', label || ''].map(encodeMetricPart).join('::');
+    }
+
+    function encodeMetricPart(value) {
+      return encodeURIComponent(value || '');
     }
 
     function emptyMetrics() {
