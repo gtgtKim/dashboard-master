@@ -18,7 +18,7 @@ export const GA4_CONFIG = {
     eventItemName: process.env.GA4_DIMENSION_EVENT_ITEM_NAME || 'customEvent:item_name',
   },
   metrics: {
-    wishlistQuantity: process.env.GA4_WISHLIST_QUANTITY_METRIC || 'quantity',
+    wishlistQuantity: process.env.GA4_WISHLIST_QUANTITY_METRIC || 'customEvent:quantity',
   },
   events: {
     homepage: process.env.GA4_EVENT_HOMEPAGE || 'click_homepage',
