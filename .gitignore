@@ -4,5 +4,5 @@
 node_modules/
 snapshots/
 skt-otw-ua-*.json
+gyutae-test-project-*.json
 *service-account*.json
-
