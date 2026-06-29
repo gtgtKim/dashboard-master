@@ -4313,7 +4313,7 @@ function renderSnapshotCatalog() {
           </section>
           <section class="help-section">
             <h3>GA4 데이터</h3>
-            <p>조회 기간과 페이지에 맞춰 GA4 Data API에서 데이터를 다시 불러옵니다. PC는 desktop, MO는 mobile 기준이며, add_to_wishlist의 카운트는 eventCount 대신 quantity metric을 우선 사용합니다.</p>
+            <p>조회 기간과 페이지에 맞춰 GA4 Data API에서 데이터를 다시 불러옵니다. PC는 desktop, MO는 mobile 기준이며, add_to_wishlist의 카운트는 itemName 디멘션과 Item quantity 메트릭으로 조회합니다.</p>
           </section>
           <section class="help-section">
             <h3>좌우 클릭 연동</h3>

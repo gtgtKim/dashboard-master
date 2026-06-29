@@ -15,10 +15,9 @@ export const GA4_CONFIG = {
     deviceCategory: process.env.GA4_DIMENSION_DEVICE_CATEGORY || 'deviceCategory',
     pagePath: process.env.GA4_DIMENSION_PAGE_PATH || 'pagePath',
     itemName: process.env.GA4_DIMENSION_ITEM_NAME || 'itemName',
-    eventItemName: process.env.GA4_DIMENSION_EVENT_ITEM_NAME || 'customEvent:item_name',
   },
   metrics: {
-    wishlistQuantity: process.env.GA4_WISHLIST_QUANTITY_METRIC || 'customEvent:quantity',
+    wishlistItemQuantity: process.env.GA4_WISHLIST_ITEM_QUANTITY_METRIC || 'itemQuantity',
   },
   events: {
     homepage: process.env.GA4_EVENT_HOMEPAGE || 'click_homepage',
@@ -53,11 +52,9 @@ export async function queryGa4Metrics({ targetId, startDate, endDate }) {
   const client = getGa4Client(keyFilename);
   const deviceCategory = deviceCategoryForTargetId(targetId);
   const warnings = [];
-  const wishlistQuantityMetrics = [{ name: GA4_CONFIG.metrics.wishlistQuantity }, ...SESSION_USER_METRICS];
   const [
     homepageResponse,
     navigationResponse,
-    wishlistEventParamQuantityResponse,
     wishlistItemQuantityResponse,
     wishlistItemResponse,
     allEventsTotalResponse,
@@ -86,19 +83,11 @@ export async function queryGa4Metrics({ targetId, startDate, endDate }) {
       dimensionFilter: navigationFilter(deviceCategory),
     }),
     safeRunRowsReport(client, {
-      label: `wishlist ${GA4_CONFIG.metrics.wishlistQuantity} by ${GA4_CONFIG.dimensions.eventItemName}`,
-      startDate,
-      endDate,
-      dimensions: [GA4_CONFIG.dimensions.eventItemName],
-      metrics: wishlistQuantityMetrics,
-      dimensionFilter: wishlistFilter(deviceCategory),
-    }),
-    safeRunRowsReport(client, {
-      label: `wishlist ${GA4_CONFIG.metrics.wishlistQuantity} by ${GA4_CONFIG.dimensions.itemName}`,
+      label: `wishlist ${GA4_CONFIG.metrics.wishlistItemQuantity} by ${GA4_CONFIG.dimensions.itemName}`,
       startDate,
       endDate,
       dimensions: [GA4_CONFIG.dimensions.itemName],
-      metrics: wishlistQuantityMetrics,
+      metrics: [{ name: GA4_CONFIG.metrics.wishlistItemQuantity }],
       dimensionFilter: wishlistFilter(deviceCategory),
     }),
     runRowsReport(client, {
@@ -119,10 +108,10 @@ export async function queryGa4Metrics({ targetId, startDate, endDate }) {
       dimensionFilter: homepageNavigationFilter(deviceCategory),
     }),
     safeRunTotalsReport(client, {
-      label: `wishlist total ${GA4_CONFIG.metrics.wishlistQuantity}`,
+      label: `wishlist total ${GA4_CONFIG.metrics.wishlistItemQuantity}`,
       startDate,
       endDate,
-      metrics: [{ name: GA4_CONFIG.metrics.wishlistQuantity }],
+      metrics: [{ name: GA4_CONFIG.metrics.wishlistItemQuantity }],
       dimensionFilter: wishlistFilter(deviceCategory),
     }),
   ]);
@@ -130,13 +119,9 @@ export async function queryGa4Metrics({ targetId, startDate, endDate }) {
   const metrics = {};
   mergeHomepageMetrics(metrics, homepageResponse);
   mergeNavigationMetrics(metrics, navigationResponse);
-  const wishlistQuantityResponse = responseHasPositiveFirstMetric(wishlistItemQuantityResponse)
-    ? wishlistItemQuantityResponse
-    : wishlistEventParamQuantityResponse;
-  mergeWishlistQuantityMetrics(metrics, wishlistQuantityResponse);
+  mergeWishlistQuantityMetrics(metrics, wishlistItemQuantityResponse);
   mergeWishlistItemMetrics(metrics, wishlistItemResponse);
 
-  collectReportWarning(warnings, wishlistEventParamQuantityResponse);
   collectReportWarning(warnings, wishlistItemQuantityResponse);
   collectReportWarning(warnings, wishlistQuantityTotalResponse);
 
@@ -157,14 +142,14 @@ export async function queryGa4Metrics({ targetId, startDate, endDate }) {
     endDate,
     deviceCategory,
     eventNames: Object.values(GA4_CONFIG.events),
-    wishlistQuantityMetric: GA4_CONFIG.metrics.wishlistQuantity,
+    wishlistQuantityMetric: GA4_CONFIG.metrics.wishlistItemQuantity,
     metrics,
     totals,
     warnings,
     rowCount:
       Number(homepageResponse.rows?.length || 0) +
       Number(navigationResponse.rows?.length || 0) +
-      Number(wishlistQuantityResponse.rows?.length || 0) +
+      Number(wishlistItemQuantityResponse.rows?.length || 0) +
       Number(wishlistItemResponse.rows?.length || 0),
   };
 }
@@ -341,10 +326,6 @@ function metricsFromRow(row) {
 
 function firstMetricFromRow(row) {
   return numberFromMetric(row?.metricValues?.[0]?.value);
-}
-
-function responseHasPositiveFirstMetric(response) {
-  return (response.rows || []).some((row) => firstMetricFromRow(row) > 0);
 }
 
 function collectReportWarning(warnings, response) {
