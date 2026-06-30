@@ -4057,13 +4057,17 @@ function renderSnapshotCatalog() {
     }
 
     .gemini-hint {
-      position: absolute;
-      z-index: 35;
-      top: calc(100% + 10px);
+      position: fixed;
+      z-index: 80;
+      top: 0;
       left: 0;
       width: max-content;
       max-width: min(320px, calc(100vw - 48px));
-      padding: 7px 10px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: start;
+      padding: 8px 8px 8px 10px;
       border: 1px solid #bed3ef;
       border-radius: 8px;
       background: #fff;
@@ -4073,24 +4077,50 @@ function renderSnapshotCatalog() {
       font-weight: 700;
       line-height: 1.35;
       white-space: normal;
-      pointer-events: none;
     }
 
     .gemini-hint::before {
       content: "";
       position: absolute;
-      top: -6px;
-      left: 16px;
+      left: var(--gemini-arrow-left, 16px);
       width: 10px;
       height: 10px;
-      border-top: 1px solid #bed3ef;
-      border-left: 1px solid #bed3ef;
       background: #fff;
       transform: rotate(45deg);
     }
 
+    .gemini-hint[data-placement="top"]::before {
+      bottom: -6px;
+      border-right: 1px solid #bed3ef;
+      border-bottom: 1px solid #bed3ef;
+    }
+
+    .gemini-hint[data-placement="bottom"]::before {
+      top: -6px;
+      border-top: 1px solid #bed3ef;
+      border-left: 1px solid #bed3ef;
+    }
+
     .gemini-hint[hidden] {
       display: none;
+    }
+
+    .gemini-hint .gemini-hint-close {
+      width: 22px;
+      min-width: 22px;
+      height: 22px;
+      padding: 0;
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      color: #66758a;
+      font-size: 16px;
+      line-height: 20px;
+    }
+
+    .gemini-hint .gemini-hint-close:hover {
+      background: #eef6ff;
+      color: #0b6bcb;
     }
 
     .panel-head h2 {
@@ -4556,7 +4586,10 @@ function renderSnapshotCatalog() {
           <div class="panel-title-row">
             <span class="gemini-trigger-wrap">
               <button class="gemini-trigger" id="insightsTrigger" type="button" aria-label="Gemini 인사이트 생성"><span aria-hidden="true">✦</span></button>
-              <span class="gemini-hint" id="insightsHint">클릭하면 Gemini 인사이트가 나옵니다.</span>
+              <span class="gemini-hint" id="insightsHint">
+                <span>클릭하면 Gemini 인사이트가 나옵니다.</span>
+                <button class="gemini-hint-close" id="insightsHintClose" type="button" aria-label="Gemini 안내 닫기">×</button>
+              </span>
             </span>
             <h2>GA Attributes</h2>
           </div>
@@ -4627,6 +4660,7 @@ function renderSnapshotCatalog() {
     const insightsTopButton = document.getElementById('insightsTopButton');
     const insightsTrigger = document.getElementById('insightsTrigger');
     const insightsHint = document.getElementById('insightsHint');
+    const insightsHintClose = document.getElementById('insightsHintClose');
     const insightsButton = document.getElementById('insightsButton');
     const insightsPanel = document.getElementById('insightsPanel');
     const insightsMeta = document.getElementById('insightsMeta');
@@ -4648,6 +4682,7 @@ function renderSnapshotCatalog() {
     const GA4_METRICS_ENABLED = ${GA4_METRICS_ENABLED ? 'true' : 'false'};
     const HELP_SEEN_KEY = 'ga-snapshot-help-seen-v3';
     const INSIGHTS_HEIGHT_KEY = 'ga-snapshot-insights-height-v1';
+    const GEMINI_HINT_DISMISSED_KEY = 'ga-snapshot-gemini-hint-dismissed-v1';
     const TOUR_STEPS = [
       {
         target: '#pageControl',
@@ -4714,6 +4749,7 @@ function renderSnapshotCatalog() {
     let dragging = false;
     let layoutSyncFrame = 0;
     let insightsBodyHeight = readStoredInsightsHeight();
+    let geminiHintDismissed = readGeminiHintDismissed();
     let periodViewRequestId = 0;
     let ga4RequestId = 0;
     let ga4RefreshTimer = null;
@@ -4809,6 +4845,11 @@ function renderSnapshotCatalog() {
       });
       insightsTopButton.addEventListener('click', requestGeminiInsights);
       insightsTrigger.addEventListener('click', requestGeminiInsights);
+      insightsHintClose.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        dismissGeminiHint();
+      });
       insightsButton.addEventListener('click', requestGeminiInsights);
       helpButton.addEventListener('click', openHelp);
       tourNext.addEventListener('click', advanceIntroTip);
@@ -4824,6 +4865,7 @@ function renderSnapshotCatalog() {
         }
       });
       window.addEventListener('resize', scheduleLayoutSync);
+      window.addEventListener('scroll', scheduleLayoutSync, true);
       window.addEventListener('load', scheduleStartupLayoutSync);
       window.addEventListener('pageshow', scheduleStartupLayoutSync);
       contentFrame.addEventListener('load', () => {
@@ -4968,11 +5010,13 @@ function renderSnapshotCatalog() {
         fitContentFrame();
         syncTableWidth();
         positionIntroTip();
+        positionGeminiHint();
         window.requestAnimationFrame(() => {
           normalizeWorkspaceColumns();
           fitContentFrame();
           syncTableWidth();
           positionIntroTip();
+          positionGeminiHint();
         });
       });
     }
@@ -5282,7 +5326,9 @@ function renderSnapshotCatalog() {
       insightsButton.disabled = isBusyOrDisabled;
       insightsTopButton.disabled = isBusyOrDisabled;
       insightsTrigger.disabled = isBusyOrDisabled;
-      insightsHint.hidden = insightsStatus.state !== 'idle';
+      const showGeminiHint = insightsStatus.state === 'idle' && !geminiHintDismissed;
+      insightsHint.hidden = !showGeminiHint;
+      if (showGeminiHint) window.requestAnimationFrame(positionGeminiHint);
 
       if (insightsStatus.state === 'disabled') {
         insightsPanel.hidden = true;
@@ -5693,6 +5739,60 @@ function renderSnapshotCatalog() {
       introTip.style.left = left + 'px';
       introTip.style.top = top + 'px';
       introTip.style.setProperty('--arrow-left', arrowLeft + 'px');
+    }
+
+    function positionGeminiHint() {
+      if (insightsHint.hidden) return;
+
+      const triggerRect = insightsTrigger.getBoundingClientRect();
+      const margin = 12;
+      const gap = 10;
+      const targetCenter = triggerRect.left + triggerRect.width / 2;
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      const maxWidth = Math.max(180, Math.min(320, viewportWidth - margin * 2));
+      const triggerInViewport = triggerRect.bottom > margin && triggerRect.top < viewportHeight - margin;
+
+      if (!triggerInViewport) {
+        insightsHint.style.visibility = 'hidden';
+        return;
+      }
+
+      insightsHint.style.visibility = '';
+      insightsHint.style.maxWidth = maxWidth + 'px';
+      const measuredRect = insightsHint.getBoundingClientRect();
+      const hintWidth = Math.min(measuredRect.width, maxWidth);
+      const hintHeight = measuredRect.height;
+      const maxLeft = Math.max(margin, viewportWidth - hintWidth - margin);
+      const left = Math.max(margin, Math.min(maxLeft, targetCenter - hintWidth / 2));
+      let top = triggerRect.top - hintHeight - gap;
+      let placement = 'top';
+
+      if (top < margin) {
+        placement = 'bottom';
+        top = triggerRect.bottom + gap;
+      }
+
+      const maxTop = Math.max(margin, viewportHeight - hintHeight - margin);
+      top = Math.max(margin, Math.min(maxTop, top));
+      const arrowLeft = Math.max(14, Math.min(hintWidth - 18, targetCenter - left - 5));
+
+      insightsHint.dataset.placement = placement;
+      insightsHint.style.left = left + 'px';
+      insightsHint.style.top = top + 'px';
+      insightsHint.style.setProperty('--gemini-arrow-left', arrowLeft + 'px');
+    }
+
+    function dismissGeminiHint() {
+      geminiHintDismissed = true;
+      insightsHint.hidden = true;
+      if (localStorageAvailable()) {
+        window.localStorage.setItem(GEMINI_HINT_DISMISSED_KEY, '1');
+      }
+    }
+
+    function readGeminiHintDismissed() {
+      return localStorageAvailable() && window.localStorage.getItem(GEMINI_HINT_DISMISSED_KEY) === '1';
     }
 
     function openHelp() {
