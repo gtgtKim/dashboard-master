@@ -5,7 +5,31 @@ import path from 'node:path';
 import { makeGa4MetricKey, queryGa4Metrics } from './ga4-data-api.mjs';
 
 const SNAPSHOTS_ROOT = path.resolve('snapshots');
-const CACHE_VERSION = 'v1';
+const PROMPT_INSTRUCTIONS = Object.freeze([
+  '너는 GA4와 이커머스 UX를 함께 보는 한국어 데이터 분석가다.',
+  '아래 JSON만 근거로 Gentle Monster 메인페이지 인사이트를 작성해라.',
+  '데이터에 없는 사실, 이미지 내용, 상품 판매 성과, 원인 단정은 추측하지 마라.',
+  '유지기간은 데이터 조회 기간 안에서 관찰된 기간이다. 유지기간 시작일을 실제 사이트 최초 노출일처럼 표현하지 마라.',
+  'Latest 영역과 Best 영역에는 상품 카드가 많다. data-action이 Latest 또는 Best인 상품 클릭은 별도의 상품 클릭 관점으로 반드시 분석해라.',
+  '모든 클릭 요소와 위치/유지기간/GA4 수치를 고려하되, 중요한 포인트 위주로 압축해라.',
+  '반드시 JSON만 출력해라. 마크다운 코드블록은 쓰지 마라.',
+]);
+const PROMPT_OUTPUT_SCHEMA = Object.freeze({
+  headline: '한 문장 핵심 결론',
+  summary: ['핵심 요약 3~5개'],
+  uxInsights: ['위치, 화면 순서, 영역 맥락을 반영한 UX 인사이트 3~5개'],
+  metricInsights: ['GA4 수치 기반 인사이트 3~5개'],
+  productClickInsights: ['Latest/Best 영역의 상품 클릭 분석 3~5개'],
+  changes: ['유지기간/신규/소멸/변경 관련 관찰 2~4개'],
+  watchouts: ['데이터 해석 주의사항 2~4개'],
+  actionItems: ['확인 또는 실행 제안 3~5개'],
+});
+const PROMPT_VERSION = crypto
+  .createHash('sha1')
+  .update(JSON.stringify({ instructions: PROMPT_INSTRUCTIONS, outputSchema: PROMPT_OUTPUT_SCHEMA }))
+  .digest('hex')
+  .slice(0, 12);
+const CACHE_VERSION = `v1:${PROMPT_VERSION}`;
 const INSIGHTS_CACHE_DIR = path.join(SNAPSHOTS_ROOT, 'ai-insights');
 const GEMINI_PROJECT = process.env.GEMINI_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID || 'gyutae-test-project';
 const GEMINI_LOCATION = process.env.GEMINI_LOCATION || process.env.GOOGLE_CLOUD_LOCATION || 'global';
@@ -30,6 +54,7 @@ export async function queryAiInsights({ targetId, startDate, endDate }) {
     status: 'ok',
     cached: false,
     cacheVersion: CACHE_VERSION,
+    promptVersion: PROMPT_VERSION,
     generatedAt: new Date().toISOString(),
     provider: 'vertex-ai',
     model: GEMINI_MODEL,
@@ -76,6 +101,8 @@ async function buildInsightInput({ targetId, startDate, endDate }) {
         'GA4 eventCount/session/user는 선택 기간과 페이지 기준으로 조회합니다. PC는 desktop, MO는 mobile device category입니다.',
       wishlistRule:
         'add_to_wishlist 개별 상품 행은 eventCount를 표시하지 않고 표에서는 -로 보여줍니다. ecommerce/add_to_wishlist 그룹 행에만 eventName=add_to_wishlist, pagePath=/us/en 기준 전체 eventCount를 표시합니다. 개별 상품 행의 sessions/users는 itemName 기준으로 유지합니다.',
+      productClickRule:
+        'Homepage / Latest와 Homepage / Best 영역에는 상품 카드가 많이 포함되어 있으므로 상품 클릭 분석에서 data-action=Latest 또는 Best, data-area, data-label, product_sku, 위치, GA4 수치를 함께 봐야 합니다.',
       aiRule:
         'AI는 제공된 JSON에 있는 숫자와 위치 정보만 근거로 분석해야 하며, 데이터에 없는 사실을 추측하면 안 됩니다.',
     },
@@ -282,26 +309,9 @@ async function generateGeminiContentWithRetry(ai, params) {
 
 function buildPrompt(analysis) {
   return [
-    '너는 GA4와 이커머스 UX를 함께 보는 한국어 데이터 분석가다.',
-    '아래 JSON만 근거로 Gentle Monster 메인페이지 인사이트를 작성해라.',
-    '데이터에 없는 사실, 이미지 내용, 상품 판매 성과, 원인 단정은 추측하지 마라.',
-    '유지기간은 데이터 조회 기간 안에서 관찰된 기간이다. 유지기간 시작일을 실제 사이트 최초 노출일처럼 표현하지 마라.',
-    '모든 클릭 요소와 위치/유지기간/GA4 수치를 고려하되, 중요한 포인트 위주로 압축해라.',
-    '반드시 JSON만 출력해라. 마크다운 코드블록은 쓰지 마라.',
+    ...PROMPT_INSTRUCTIONS,
     '출력 스키마:',
-    JSON.stringify(
-      {
-        headline: '한 문장 핵심 결론',
-        summary: ['핵심 요약 3~5개'],
-        uxInsights: ['위치, 화면 순서, 영역 맥락을 반영한 UX 인사이트 3~5개'],
-        metricInsights: ['GA4 수치 기반 인사이트 3~5개'],
-        changes: ['유지기간/신규/소멸/변경 관련 관찰 2~4개'],
-        watchouts: ['데이터 해석 주의사항 2~4개'],
-        actionItems: ['확인 또는 실행 제안 3~5개'],
-      },
-      null,
-      2,
-    ),
+    JSON.stringify(PROMPT_OUTPUT_SCHEMA, null, 2),
     '분석 데이터:',
     JSON.stringify(analysis),
   ].join('\n\n');
@@ -317,6 +327,7 @@ function parseGeminiJson(text) {
       summary: [trimmed.slice(0, 2000)],
       uxInsights: [],
       metricInsights: [],
+      productClickInsights: [],
       changes: [],
       watchouts: ['응답 형식 오류가 있어 원문 일부만 표시합니다.'],
       actionItems: [],
