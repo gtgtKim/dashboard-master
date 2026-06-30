@@ -4060,9 +4060,9 @@ function renderSnapshotCatalog() {
       position: absolute;
       z-index: 35;
       top: calc(100% + 10px);
-      left: 50%;
+      left: 0;
       width: max-content;
-      max-width: min(320px, 52vw);
+      max-width: min(320px, calc(100vw - 48px));
       padding: 7px 10px;
       border: 1px solid #bed3ef;
       border-radius: 8px;
@@ -4074,20 +4074,19 @@ function renderSnapshotCatalog() {
       line-height: 1.35;
       white-space: normal;
       pointer-events: none;
-      transform: translateX(-50%);
     }
 
     .gemini-hint::before {
       content: "";
       position: absolute;
       top: -6px;
-      left: 50%;
+      left: 16px;
       width: 10px;
       height: 10px;
       border-top: 1px solid #bed3ef;
       border-left: 1px solid #bed3ef;
       background: #fff;
-      transform: translateX(-50%) rotate(45deg);
+      transform: rotate(45deg);
     }
 
     .gemini-hint[hidden] {
