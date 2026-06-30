@@ -3,6 +3,7 @@ import fsp from 'node:fs/promises';
 import crypto from 'node:crypto';
 import http from 'node:http';
 import path from 'node:path';
+import { queryAiInsights } from './ai-insights-api.mjs';
 import { queryGa4Metrics } from './ga4-data-api.mjs';
 
 const SNAPSHOTS_ROOT = path.resolve('snapshots');
@@ -14,6 +15,7 @@ const DASHBOARD_COOKIE_NAME = process.env.DASHBOARD_COOKIE_NAME || 'gentlemonste
 const DASHBOARD_COOKIE_DAYS = Number(process.env.DASHBOARD_COOKIE_DAYS || 7);
 const REQUIRE_HTTPS = process.env.DASHBOARD_REQUIRE_HTTPS === 'true';
 const GA4_METRICS_ENABLED = process.env.GA4_METRICS_ENABLED === 'true';
+const GEMINI_INSIGHTS_ENABLED = process.env.GEMINI_INSIGHTS_ENABLED !== 'false';
 const BASE_PATH = normalizeBasePath(process.env.BASE_PATH || '');
 
 const server = http.createServer(async (request, response) => {
@@ -58,6 +60,16 @@ const server = http.createServer(async (request, response) => {
       }
 
       await handleGa4Metrics(url, response);
+      return;
+    }
+
+    if (request.method === 'GET' && appPath === '/api/ai-insights') {
+      if (!GEMINI_INSIGHTS_ENABLED) {
+        sendJson(response, 501, { status: 'disabled', error: 'Gemini insights are disabled for now.' });
+        return;
+      }
+
+      await handleAiInsights(url, response);
       return;
     }
 
@@ -121,6 +133,27 @@ async function handleGa4Metrics(url, response) {
   try {
     const result = await queryGa4Metrics({ targetId, startDate, endDate });
     sendJson(response, 200, { status: 'ok', ...result });
+  } catch (error) {
+    sendJson(response, 500, {
+      status: 'error',
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+async function handleAiInsights(url, response) {
+  const targetId = url.searchParams.get('targetId') || '';
+  const startDate = url.searchParams.get('startDate') || '';
+  const endDate = url.searchParams.get('endDate') || '';
+
+  if (!targetId) {
+    sendJson(response, 400, { status: 'error', error: 'targetId is required.' });
+    return;
+  }
+
+  try {
+    const result = await queryAiInsights({ targetId, startDate, endDate });
+    sendJson(response, 200, result);
   } catch (error) {
     sendJson(response, 500, {
       status: 'error',
