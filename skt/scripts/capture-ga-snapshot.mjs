@@ -8,6 +8,7 @@ import { GA4_CONFIG, makeGa4MetricKey } from './ga4-data-api.mjs';
 const OUTPUT_ROOT = path.resolve('snapshots');
 const RUN_ID = process.env.RUN_ID || timestampForPath(new Date());
 const RUN_DIR = path.join(OUTPUT_ROOT, RUN_ID);
+const REBUILD_CATALOG_ONLY = process.argv.includes('--rebuild-catalog');
 
 const targets = [
   {
@@ -35,6 +36,12 @@ const targets = [
     },
   },
 ];
+
+if (REBUILD_CATALOG_ONLY) {
+  await rebuildSnapshotCatalog(OUTPUT_ROOT);
+  console.log(JSON.stringify({ status: 'ok', rebuilt: path.join(OUTPUT_ROOT, 'index.html') }, null, 2));
+  process.exit(0);
+}
 
 const browser = await chromium.launch({
   headless: true,
@@ -2817,7 +2824,7 @@ function renderSnapshotCatalog() {
 
     .bar {
       display: grid;
-      grid-template-columns: auto minmax(170px, 260px) minmax(310px, 400px) minmax(0, 1fr) auto;
+      grid-template-columns: auto minmax(170px, 260px) minmax(310px, 400px) minmax(0, 1fr) auto auto;
       gap: 10px;
       align-items: center;
       min-width: 0;
@@ -2876,7 +2883,8 @@ function renderSnapshotCatalog() {
       color: #1d2430;
     }
 
-    .help-button {
+    .help-button,
+    .insights-top-button {
       white-space: nowrap;
     }
 
@@ -3119,7 +3127,7 @@ function renderSnapshotCatalog() {
       min-height: 0;
       height: 100%;
       display: grid;
-      grid-template-rows: auto auto 1fr;
+      grid-template-rows: auto auto auto 1fr;
       overflow: hidden;
       border: 1px solid #d7deea;
       border-radius: 8px;
@@ -3131,9 +3139,215 @@ function renderSnapshotCatalog() {
       border-bottom: 1px solid #e5e9f0;
     }
 
+    .panel-title-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .gemini-trigger-wrap {
+      position: relative;
+      display: inline-flex;
+      flex: 0 0 auto;
+      align-items: center;
+    }
+
+    .gemini-trigger {
+      width: 32px;
+      min-width: 32px;
+      padding: 0;
+      border-color: #94bdf4;
+      background: #edf6ff;
+      color: #0b6bcb;
+      font-size: 18px;
+      line-height: 1;
+    }
+
+    .gemini-trigger:hover {
+      border-color: #0b6bcb;
+      background: #e2f0ff;
+      color: #0758a8;
+    }
+
+    .gemini-trigger:disabled {
+      cursor: not-allowed;
+      opacity: 0.52;
+    }
+
+    .gemini-hint {
+      position: fixed;
+      z-index: 80;
+      top: 0;
+      left: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      max-width: min(320px, calc(100vw - 24px));
+      padding: 10px 10px 10px 12px;
+      border: 1px solid #bed3ef;
+      border-radius: 8px;
+      background: #fff;
+      box-shadow: 0 14px 34px rgba(20, 31, 48, 0.18);
+      color: #263244;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.35;
+      white-space: normal;
+    }
+
+    .gemini-hint::before {
+      content: "";
+      position: absolute;
+      left: var(--gemini-arrow-left, 16px);
+      width: 10px;
+      height: 10px;
+      background: #fff;
+      transform: rotate(45deg);
+    }
+
+    .gemini-hint[data-placement="top"]::before {
+      bottom: -6px;
+      border-right: 1px solid #bed3ef;
+      border-bottom: 1px solid #bed3ef;
+    }
+
+    .gemini-hint[data-placement="bottom"]::before {
+      top: -6px;
+      border-top: 1px solid #bed3ef;
+      border-left: 1px solid #bed3ef;
+    }
+
+    .gemini-hint[hidden] {
+      display: none;
+    }
+
+    .gemini-hint .gemini-hint-close {
+      width: 22px;
+      min-width: 22px;
+      height: 22px;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: #687486;
+      font-size: 16px;
+      line-height: 20px;
+    }
+
+    .gemini-hint .gemini-hint-close:hover {
+      background: #eef6ff;
+      color: #0b6bcb;
+    }
+
     .panel-head h2 {
       margin: 0 0 6px;
       font-size: 16px;
+    }
+
+    .panel-title-row h2 {
+      margin: 0;
+    }
+
+    .insights-panel {
+      display: grid;
+      gap: 10px;
+      padding: 10px 12px 12px;
+      border-bottom: 1px solid #edf0f5;
+      background: #fbfcfe;
+    }
+
+    .insights-panel[hidden] {
+      display: none;
+    }
+
+    .insights-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .insights-title {
+      display: grid;
+      gap: 3px;
+      min-width: 0;
+      font-size: 13px;
+    }
+
+    .insights-title small,
+    .insights-body small {
+      color: #687486;
+      font-weight: 700;
+    }
+
+    .insights-body {
+      display: grid;
+      gap: 10px;
+      height: var(--insights-body-height, 260px);
+      overflow: auto;
+      color: #303b4d;
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .insights-body[hidden] {
+      display: none;
+    }
+
+    .insights-body h3 {
+      margin: 0 0 5px;
+      color: #172033;
+      font-size: 12px;
+    }
+
+    .insights-body p {
+      margin: 0;
+    }
+
+    .insights-body ul {
+      margin: 0;
+      padding-left: 18px;
+    }
+
+    .insights-body li {
+      margin: 3px 0;
+    }
+
+    .insights-status {
+      color: #687486;
+      font-weight: 700;
+    }
+
+    .insights-resizer {
+      position: relative;
+      height: 10px;
+      margin: -2px 0 -6px;
+      cursor: row-resize;
+      touch-action: none;
+    }
+
+    .insights-resizer::before {
+      content: "";
+      position: absolute;
+      top: 4px;
+      left: 50%;
+      width: 56px;
+      height: 2px;
+      border-radius: 999px;
+      background: #c9d2e1;
+      transform: translateX(-50%);
+    }
+
+    .insights-resizer:hover::before,
+    .insights-resizer.dragging::before {
+      background: #0b6bcb;
+    }
+
+    body.is-insights-resizing,
+    body.is-insights-resizing * {
+      cursor: row-resize !important;
+      user-select: none !important;
     }
 
     .toolbar {
@@ -3398,6 +3612,7 @@ function renderSnapshotCatalog() {
         </label>
       </div>
       <div class="stats" id="stats"></div>
+      <button class="insights-top-button" id="insightsTopButton" type="button">Gemini 인사이트</button>
       <button class="help-button" id="helpButton" type="button">도움말</button>
     </section>
     <section class="help-popover" id="introTip" hidden aria-live="polite">
@@ -3441,6 +3656,12 @@ function renderSnapshotCatalog() {
             </ul>
           </section>
           <section class="help-section">
+            <h3>Gemini 인사이트</h3>
+            <p>GA Attributes 왼쪽의 Gemini 아이콘을 누르면 선택한 기간과 페이지의 모든 클릭 요소, 위치, 유지기간, GA4 수치, 대시보드 해석 규칙을 요약해 Gemini 3 Flash로 분석합니다. 같은 기간과 페이지, 같은 프롬프트는 캐시된 결과를 다시 보여주고, 프롬프트가 바뀌면 새로 생성합니다.</p>
+            <p>SKT T world Shop 메인페이지 기준으로 메인 배너, 휴대폰 구매/추천, 요금제, 나만의 꿀 요금제, 이벤트/혜택 등 콘텐츠 영역별 클릭 흐름과 태깅 해석 주의사항을 함께 검토합니다.</p>
+            <p>결과 칸이 열린 뒤에는 칸 하단 경계선을 위아래로 드래그해서 인사이트 영역 높이를 조정할 수 있습니다.</p>
+          </section>
+          <section class="help-section">
             <h3>좌우 클릭 연동</h3>
             <ul>
               <li>왼쪽 캡처 화면의 요소를 클릭하면 오른쪽 표에서 해당 행으로 이동합니다.</li>
@@ -3481,9 +3702,29 @@ function renderSnapshotCatalog() {
       <div class="splitter" id="splitter" role="separator" aria-orientation="vertical" aria-label="Resize preview and GA Attributes"></div>
       <aside class="panel" id="attributePanel" aria-label="GA Attributes">
         <div class="panel-head">
-          <h2>GA Attributes</h2>
+          <div class="panel-title-row">
+            <span class="gemini-trigger-wrap">
+              <button class="gemini-trigger" id="insightsTrigger" type="button" aria-label="Gemini 인사이트 생성"><span aria-hidden="true">✦</span></button>
+              <span class="gemini-hint" id="insightsHint">
+                <span>클릭하면 Gemini 인사이트가 나옵니다.</span>
+                <button class="gemini-hint-close" id="insightsHintClose" type="button" aria-label="Gemini 안내 닫기">×</button>
+              </span>
+            </span>
+            <h2>GA Attributes</h2>
+          </div>
           <div class="stats" id="panelMeta"></div>
         </div>
+        <section class="insights-panel" id="insightsPanel" aria-label="Gemini insights" hidden>
+          <div class="insights-head">
+            <div class="insights-title">
+              <strong>Gemini 인사이트</strong>
+              <small id="insightsMeta">선택한 기간과 페이지 기준으로 생성합니다.</small>
+            </div>
+            <button id="insightsButton" type="button">생성</button>
+          </div>
+          <div class="insights-body" id="insightsBody" hidden></div>
+          <div class="insights-resizer" id="insightsResizer" role="separator" aria-orientation="horizontal" aria-label="Resize Gemini insights"></div>
+        </section>
         <div class="toolbar">
           <input id="filterInput" type="search" placeholder="ga_action, ga_label 검색">
           <div class="toolbar-actions">
@@ -3525,11 +3766,21 @@ function renderSnapshotCatalog() {
     const panelMeta = document.getElementById('panelMeta');
     const workspace = document.getElementById('workspace');
     const preview = document.getElementById('preview');
+    const attributePanel = document.getElementById('attributePanel');
     const splitter = document.getElementById('splitter');
     const contentFrame = document.getElementById('contentFrame');
     const filterInput = document.getElementById('filterInput');
     const expandAllButton = document.getElementById('expandAll');
     const collapseAllButton = document.getElementById('collapseAll');
+    const insightsTopButton = document.getElementById('insightsTopButton');
+    const insightsTrigger = document.getElementById('insightsTrigger');
+    const insightsHint = document.getElementById('insightsHint');
+    const insightsHintClose = document.getElementById('insightsHintClose');
+    const insightsButton = document.getElementById('insightsButton');
+    const insightsPanel = document.getElementById('insightsPanel');
+    const insightsMeta = document.getElementById('insightsMeta');
+    const insightsBody = document.getElementById('insightsBody');
+    const insightsResizer = document.getElementById('insightsResizer');
     const helpButton = document.getElementById('helpButton');
     const introTip = document.getElementById('introTip');
     const tourStep = document.getElementById('tourStep');
@@ -3544,6 +3795,8 @@ function renderSnapshotCatalog() {
     const tableColGroup = document.getElementById('tableColGroup');
     const periodRows = document.getElementById('periodRows');
     const HELP_SEEN_KEY = 'ga-snapshot-help-seen-v3';
+    const INSIGHTS_HEIGHT_KEY = 'ga-snapshot-skt-insights-height-v1';
+    const GEMINI_HINT_DISMISSED_KEY = 'ga-snapshot-skt-gemini-hint-dismissed-v1';
     const TOUR_STEPS = [
       {
         target: '#pageControl',
@@ -3569,6 +3822,11 @@ function renderSnapshotCatalog() {
         target: '#tableWrap',
         title: 'GA Attributes 표',
         body: '표 행을 클릭하면 왼쪽 화면에서 해당 요소 위치로 이동하고 빨간 박스를 표시합니다. 같은 GA 값이 여러 요소에 있으면 반복 클릭으로 차례대로 봅니다.',
+      },
+      {
+        target: '#insightsTrigger',
+        title: 'Gemini 인사이트',
+        body: '이 아이콘을 누르면 선택한 기간과 페이지의 모든 클릭 요소, 위치, GA4 데이터를 Gemini로 요약합니다. 결과가 열리면 하단 경계선을 위아래로 드래그해 높이를 조절할 수 있습니다.',
       },
       {
         target: '.toolbar-actions',
@@ -3604,14 +3862,23 @@ function renderSnapshotCatalog() {
     let activeTourTarget = null;
     let dragging = false;
     let layoutSyncFrame = 0;
+    let insightsBodyHeight = readStoredInsightsHeight();
+    let geminiHintDismissed = readGeminiHintDismissed();
     let periodViewRequestId = 0;
     let ga4RequestId = 0;
     let ga4RefreshTimer = null;
+    let insightsRequestId = 0;
     let ga4Status = {
       state: 'idle',
       message: '대기',
       totals: emptyMetrics(),
       rowCount: 0,
+    };
+    let insightsStatus = {
+      state: 'idle',
+      message: '생성 전',
+      cached: false,
+      insight: null,
     };
 
     init();
@@ -3620,6 +3887,8 @@ function renderSnapshotCatalog() {
       installControls();
       installSplitter();
       installColumnResizers();
+      installInsightsResizer();
+      applyInsightsHeight();
       try {
         await loadCatalog();
         renderTargetOptions();
@@ -3688,6 +3957,14 @@ function renderSnapshotCatalog() {
         for (const record of periodRecords) collapsedGroups.add(groupIdForAction(record.ga_action));
         renderPeriodRows();
       });
+      insightsTopButton.addEventListener('click', requestGeminiInsights);
+      insightsTrigger.addEventListener('click', requestGeminiInsights);
+      insightsHintClose.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        dismissGeminiHint();
+      });
+      insightsButton.addEventListener('click', requestGeminiInsights);
       helpButton.addEventListener('click', openHelp);
       tourNext.addEventListener('click', advanceIntroTip);
       helpClose.addEventListener('click', closeHelp);
@@ -3702,6 +3979,7 @@ function renderSnapshotCatalog() {
         }
       });
       window.addEventListener('resize', scheduleLayoutSync);
+      window.addEventListener('scroll', scheduleLayoutSync, true);
       window.addEventListener('load', scheduleStartupLayoutSync);
       window.addEventListener('pageshow', scheduleStartupLayoutSync);
       contentFrame.addEventListener('load', () => {
@@ -3720,6 +3998,7 @@ function renderSnapshotCatalog() {
       if (window.ResizeObserver) {
         const observer = new ResizeObserver(scheduleLayoutSync);
         observer.observe(workspace);
+        observer.observe(attributePanel);
         observer.observe(tableWrap);
       }
     }
@@ -3770,6 +4049,65 @@ function renderSnapshotCatalog() {
       syncTableWidth();
     }
 
+    function installInsightsResizer() {
+      if (!insightsResizer) return;
+
+      insightsResizer.addEventListener('pointerdown', (event) => {
+        const startY = event.clientY;
+        const startHeight = insightsBodyHeight;
+        insightsResizer.classList.add('dragging');
+        document.body.classList.add('is-insights-resizing');
+        try {
+          insightsResizer.setPointerCapture(event.pointerId);
+        } catch {}
+
+        const onPointerMove = (moveEvent) => {
+          insightsBodyHeight = clampInsightsHeight(startHeight + moveEvent.clientY - startY);
+          applyInsightsHeight();
+        };
+
+        const stop = (upEvent) => {
+          insightsResizer.classList.remove('dragging');
+          document.body.classList.remove('is-insights-resizing');
+          window.removeEventListener('pointermove', onPointerMove);
+          window.removeEventListener('pointerup', stop);
+          window.removeEventListener('pointercancel', stop);
+          try {
+            insightsResizer.releasePointerCapture(upEvent?.pointerId);
+          } catch {}
+          storeInsightsHeight();
+        };
+
+        window.addEventListener('pointermove', onPointerMove);
+        window.addEventListener('pointerup', stop);
+        window.addEventListener('pointercancel', stop);
+        event.preventDefault();
+        event.stopPropagation();
+      });
+    }
+
+    function readStoredInsightsHeight() {
+      if (!localStorageAvailable()) return 260;
+      const value = Number(window.localStorage.getItem(INSIGHTS_HEIGHT_KEY));
+      return Number.isFinite(value) && value > 0 ? clampInsightsHeight(value) : 260;
+    }
+
+    function storeInsightsHeight() {
+      if (!localStorageAvailable()) return;
+      window.localStorage.setItem(INSIGHTS_HEIGHT_KEY, String(insightsBodyHeight));
+    }
+
+    function clampInsightsHeight(value) {
+      const maxHeight = Math.max(120, Math.min(720, Math.floor((attributePanel?.clientHeight || window.innerHeight) - 210)));
+      return Math.max(96, Math.min(Math.round(Number(value) || 260), maxHeight));
+    }
+
+    function applyInsightsHeight() {
+      insightsBodyHeight = clampInsightsHeight(insightsBodyHeight);
+      insightsPanel.style.setProperty('--insights-body-height', insightsBodyHeight + 'px');
+      scheduleLayoutSync();
+    }
+
     function syncTableWidth() {
       const totalWidth = Array.from(tableColGroup.children).reduce((sum, col) => {
         return sum + (Number.parseFloat(col.style.width) || col.getBoundingClientRect().width || 0);
@@ -3787,11 +4125,13 @@ function renderSnapshotCatalog() {
         fitContentFrame();
         syncTableWidth();
         positionIntroTip();
+        positionGeminiHint();
         window.requestAnimationFrame(() => {
           normalizeWorkspaceColumns();
           fitContentFrame();
           syncTableWidth();
           positionIntroTip();
+          positionGeminiHint();
         });
       });
     }
@@ -3858,12 +4198,14 @@ function renderSnapshotCatalog() {
       const latestTarget = latestRun ? getTarget(latestRun, targetId) : null;
 
       ga4RequestId += 1;
+      insightsRequestId += 1;
       ga4Status = {
         state: runs.length ? 'loading' : 'idle',
         message: runs.length ? '조회 중' : '대기',
         totals: emptyMetrics(),
         rowCount: 0,
       };
+      resetGeminiInsights(runs.length);
       periodRecords = [];
       recordByKey = new Map();
       recordByOccurrenceId = new Map();
@@ -3987,6 +4329,182 @@ function renderSnapshotCatalog() {
 
       renderPeriodRows();
       updateMetaForCurrentSelection();
+    }
+
+    function resetGeminiInsights(hasRuns) {
+      insightsStatus = {
+        state: hasRuns ? 'idle' : 'disabled',
+        message: hasRuns ? '생성 전' : '선택 기간에 저장된 데이터가 없습니다.',
+        cached: false,
+        insight: null,
+      };
+      renderGeminiInsights();
+    }
+
+    async function requestGeminiInsights() {
+      const targetId = targetSelect.value;
+      const startDate = startDateInput.value;
+      const endDate = endDateInput.value;
+      const runs = getSelectedRuns(targetId);
+      if (!runs.length) {
+        resetGeminiInsights(false);
+        return;
+      }
+
+      if (location.protocol === 'file:') {
+        insightsStatus = {
+          state: 'error',
+          message: '서버 필요',
+          detail: 'Gemini 인사이트는 npm run serve 또는 배포 서버에서 열어야 합니다.',
+          cached: false,
+          insight: null,
+        };
+        renderGeminiInsights();
+        return;
+      }
+
+      const requestId = ++insightsRequestId;
+      insightsStatus = {
+        state: 'loading',
+        message: 'Gemini 분석 중',
+        cached: false,
+        insight: null,
+      };
+      renderGeminiInsights();
+      insightsPanel.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+
+      try {
+        const params = new URLSearchParams({ targetId, startDate, endDate });
+        const response = await fetch('../api/ai-insights?' + params.toString(), {
+          method: 'GET',
+          cache: 'no-store',
+          headers: { Accept: 'application/json' },
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (requestId !== insightsRequestId) return;
+
+        if (!response.ok || payload.status === 'error') {
+          throw new Error(payload.error || 'Gemini 인사이트를 생성하지 못했습니다.');
+        }
+
+        insightsStatus = {
+          state: 'ok',
+          message: payload.cached ? '캐시된 결과' : '생성 완료',
+          cached: Boolean(payload.cached),
+          generatedAt: payload.generatedAt || '',
+          model: payload.model || '',
+          summary: payload.summary || {},
+          insight: payload.insight || {},
+        };
+      } catch (error) {
+        if (requestId !== insightsRequestId) return;
+        insightsStatus = {
+          state: 'error',
+          message: '오류',
+          detail: error instanceof Error ? error.message : String(error),
+          cached: false,
+          insight: null,
+        };
+      }
+
+      renderGeminiInsights();
+    }
+
+    function renderGeminiInsights() {
+      const isBusyOrDisabled = insightsStatus.state === 'loading' || insightsStatus.state === 'disabled';
+      insightsButton.disabled = isBusyOrDisabled;
+      insightsTopButton.disabled = isBusyOrDisabled;
+      insightsTrigger.disabled = isBusyOrDisabled;
+      const showGeminiHint = insightsStatus.state === 'idle' && !geminiHintDismissed;
+      insightsHint.hidden = !showGeminiHint;
+      if (showGeminiHint) window.requestAnimationFrame(positionGeminiHint);
+
+      if (insightsStatus.state === 'disabled') {
+        insightsPanel.hidden = true;
+        insightsButton.textContent = '생성';
+        insightsMeta.textContent = insightsStatus.message;
+        insightsBody.hidden = true;
+        insightsBody.innerHTML = '';
+        return;
+      }
+
+      if (insightsStatus.state === 'idle') {
+        insightsPanel.hidden = true;
+        insightsButton.textContent = '생성';
+        insightsMeta.textContent = '선택한 기간과 페이지 기준으로 생성합니다.';
+        insightsBody.hidden = true;
+        insightsBody.innerHTML = '';
+        return;
+      }
+
+      insightsPanel.hidden = false;
+      applyInsightsHeight();
+
+      if (insightsStatus.state === 'loading') {
+        insightsButton.textContent = '생성 중';
+        insightsMeta.textContent = '모든 클릭 요소, 위치, 유지기간, GA4 데이터를 요약해 Gemini에 전달 중입니다.';
+        insightsBody.hidden = false;
+        insightsBody.innerHTML = '<p class="insights-status">Gemini가 인사이트를 생성하고 있습니다.</p>';
+        return;
+      }
+
+      if (insightsStatus.state === 'error') {
+        insightsButton.textContent = '다시 시도';
+        insightsMeta.textContent = insightsStatus.message;
+        insightsBody.hidden = false;
+        insightsBody.innerHTML = '<p class="insights-status">' + escapeHtml(insightsStatus.detail || '오류가 발생했습니다.') + '</p>';
+        return;
+      }
+
+      insightsButton.textContent = '보기';
+      const generated = insightsStatus.generatedAt ? formatDateTime(insightsStatus.generatedAt) : '';
+      const cacheText = insightsStatus.cached ? '캐시됨' : '새로 생성됨';
+      const modelText = insightsStatus.model ? ' · ' + insightsStatus.model : '';
+      insightsMeta.textContent = cacheText + (generated ? ' · ' + generated : '') + modelText;
+      insightsBody.hidden = false;
+      insightsBody.innerHTML = renderInsightContent(insightsStatus.insight, insightsStatus.summary);
+    }
+
+    function renderInsightContent(insight = {}, summary = {}) {
+      const sections = [
+        ['핵심 요약', insight.summary],
+        ['UX 인사이트', insight.uxInsights],
+        ['수치 인사이트', insight.metricInsights],
+        ['콘텐츠 영역 인사이트', insight.sectionInsights],
+        ['변화 포인트', insight.changes],
+        ['주의사항', insight.watchouts],
+        ['액션 제안', insight.actionItems],
+      ];
+      const summaryText = summary.elementCount
+        ? '<small>' + escapeHtml(String(summary.elementCount)) + ' elements · ' + escapeHtml(String(summary.groupCount || 0)) + ' groups</small>'
+        : '';
+      return [
+        '<section>',
+        '<h3>' + escapeHtml(insight.headline || 'Gemini 인사이트') + '</h3>',
+        summaryText,
+        '</section>',
+        sections.map(([title, items]) => renderInsightSection(title, items)).join(''),
+      ].join('');
+    }
+
+    function renderInsightSection(title, items) {
+      const list = Array.isArray(items) ? items.filter(Boolean) : [];
+      if (!list.length) return '';
+      return '<section><h3>' + escapeHtml(title) + '</h3><ul>' +
+        list.map((item) => '<li>' + escapeHtml(String(item)) + '</li>').join('') +
+        '</ul></section>';
+    }
+
+    function formatDateTime(value) {
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return value;
+      return new Intl.DateTimeFormat('ko-KR', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      }).format(date);
     }
 
     function applyGa4Metrics(metrics) {
@@ -4294,6 +4812,60 @@ function renderSnapshotCatalog() {
       introTip.style.left = left + 'px';
       introTip.style.top = top + 'px';
       introTip.style.setProperty('--arrow-left', arrowLeft + 'px');
+    }
+
+    function positionGeminiHint() {
+      if (insightsHint.hidden) return;
+
+      const triggerRect = insightsTrigger.getBoundingClientRect();
+      const margin = 12;
+      const gap = 10;
+      const targetCenter = triggerRect.left + triggerRect.width / 2;
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      const maxWidth = Math.max(180, Math.min(320, viewportWidth - margin * 2));
+      const triggerInViewport = triggerRect.bottom > margin && triggerRect.top < viewportHeight - margin;
+
+      if (!triggerInViewport) {
+        insightsHint.style.visibility = 'hidden';
+        return;
+      }
+
+      insightsHint.style.visibility = '';
+      insightsHint.style.maxWidth = maxWidth + 'px';
+      const measuredRect = insightsHint.getBoundingClientRect();
+      const hintWidth = Math.min(measuredRect.width, maxWidth);
+      const hintHeight = measuredRect.height;
+      const maxLeft = Math.max(margin, viewportWidth - hintWidth - margin);
+      const left = Math.max(margin, Math.min(maxLeft, targetCenter - hintWidth / 2));
+      let top = triggerRect.top - hintHeight - gap;
+      let placement = 'top';
+
+      if (top < margin) {
+        placement = 'bottom';
+        top = triggerRect.bottom + gap;
+      }
+
+      const maxTop = Math.max(margin, viewportHeight - hintHeight - margin);
+      top = Math.max(margin, Math.min(maxTop, top));
+      const arrowLeft = Math.max(14, Math.min(hintWidth - 18, targetCenter - left - 5));
+
+      insightsHint.dataset.placement = placement;
+      insightsHint.style.left = left + 'px';
+      insightsHint.style.top = top + 'px';
+      insightsHint.style.setProperty('--gemini-arrow-left', arrowLeft + 'px');
+    }
+
+    function dismissGeminiHint() {
+      geminiHintDismissed = true;
+      insightsHint.hidden = true;
+      if (localStorageAvailable()) {
+        window.localStorage.setItem(GEMINI_HINT_DISMISSED_KEY, '1');
+      }
+    }
+
+    function readGeminiHintDismissed() {
+      return localStorageAvailable() && window.localStorage.getItem(GEMINI_HINT_DISMISSED_KEY) === '1';
     }
 
     function openHelp() {
