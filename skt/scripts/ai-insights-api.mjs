@@ -36,9 +36,10 @@ const PROMPT_VERSION = crypto
   .slice(0, 12);
 const CACHE_VERSION = `v1:${PROMPT_VERSION}`;
 const INSIGHTS_CACHE_DIR = path.join(SNAPSHOTS_ROOT, 'ai-insights');
-const GEMINI_PROJECT = process.env.GEMINI_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID || 'skt-otw-ua-44615111-2';
+const GEMINI_PROJECT = process.env.GEMINI_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID || 'gyutae-test-project';
 const GEMINI_LOCATION = process.env.GEMINI_LOCATION || process.env.GOOGLE_CLOUD_LOCATION || 'global';
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3-flash-preview';
+const GEMINI_APPLICATION_CREDENTIALS = process.env.GEMINI_APPLICATION_CREDENTIALS || process.env.GEMINI_GOOGLE_APPLICATION_CREDENTIALS || '';
 const MAX_OUTPUT_TOKENS = positiveInteger(process.env.GEMINI_INSIGHTS_MAX_OUTPUT_TOKENS, 8192);
 const GEMINI_RETRY_ATTEMPTS = positiveInteger(process.env.GEMINI_INSIGHTS_RETRY_ATTEMPTS, 3);
 const GEMINI_RETRY_DELAY_MS = positiveInteger(process.env.GEMINI_INSIGHTS_RETRY_DELAY_MS, 12_000);
@@ -288,10 +289,12 @@ function buildGroups(records, ga4) {
 }
 
 async function generateGeminiInsight(analysis) {
+  const geminiCredentialFile = await findGeminiCredentialFile();
   const ai = new GoogleGenAI({
     vertexai: true,
     project: GEMINI_PROJECT,
     location: GEMINI_LOCATION,
+    ...(geminiCredentialFile ? { googleAuthOptions: { keyFilename: geminiCredentialFile } } : {}),
   });
   const response = await generateGeminiContentWithRetry(ai, {
     model: GEMINI_MODEL,
@@ -308,6 +311,26 @@ async function generateGeminiInsight(analysis) {
     },
   });
   return parseGeminiJson(response.text || '');
+}
+
+async function findGeminiCredentialFile() {
+  if (GEMINI_APPLICATION_CREDENTIALS) {
+    return path.resolve(GEMINI_APPLICATION_CREDENTIALS);
+  }
+
+  const candidates = [
+    path.resolve('/run/secrets/gemini-key.json'),
+    path.resolve(process.cwd(), 'gyutae-test-project-f714548c9b52.json'),
+    path.resolve(process.cwd(), '..', 'gyutae-test-project-f714548c9b52.json'),
+  ];
+
+  for (const candidate of candidates) {
+    if (await fileExists(candidate)) return candidate;
+  }
+
+  const parentEntries = await fs.readdir(path.resolve(process.cwd(), '..')).catch(() => []);
+  const keyFile = parentEntries.find((entry) => /^gyutae-test-project-.*\.json$/i.test(entry));
+  return keyFile ? path.resolve(process.cwd(), '..', keyFile) : null;
 }
 
 async function generateGeminiContentWithRetry(ai, params) {
@@ -489,6 +512,15 @@ async function readJsonFile(filePath) {
   }
 }
 
+async function fileExists(filePath) {
+  try {
+    const stat = await fs.stat(filePath);
+    return stat.isFile();
+  } catch {
+    return false;
+  }
+}
+
 function validateDate(value, name) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value || ''))) {
     throw new Error(`${name} must be YYYY-MM-DD.`);
@@ -515,7 +547,7 @@ function formatGeminiError(error) {
   }
 
   if (status === 403 || /PERMISSION_DENIED|aiplatform\.endpoints\.predict/i.test(message)) {
-    return new Error('SKT 서비스 계정에 Vertex AI Gemini 호출 권한이 없습니다. skt-otw-ua-44615111-2 프로젝트에서 ga4-data-api-reader 서비스 계정에 roles/aiplatform.user 권한을 부여해야 합니다.');
+    return new Error('Gemini 호출 권한이 없습니다. GEMINI_APPLICATION_CREDENTIALS에 지정한 서비스 계정이 gyutae-test-project의 Vertex AI 호출 권한을 가지고 있는지 확인해야 합니다.');
   }
 
   return error instanceof Error ? error : new Error(message || 'Gemini 인사이트를 생성하지 못했습니다.');

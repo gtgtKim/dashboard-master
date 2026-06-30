@@ -17,12 +17,14 @@ services:
       DASHBOARD_REQUIRE_HTTPS: ${DASHBOARD_REQUIRE_HTTPS:-false}
       DASHBOARD_COOKIE_DAYS: ${DASHBOARD_COOKIE_DAYS:-7}
       GEMINI_INSIGHTS_ENABLED: ${GEMINI_INSIGHTS_ENABLED:-true}
-      GEMINI_PROJECT_ID: ${GEMINI_PROJECT_ID:-skt-otw-ua-44615111-2}
+      GEMINI_PROJECT_ID: ${GEMINI_PROJECT_ID:-gyutae-test-project}
       GEMINI_LOCATION: ${GEMINI_LOCATION:-global}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3-flash-preview}
+      GEMINI_APPLICATION_CREDENTIALS: /run/secrets/gemini-key.json
     volumes:
       - ./snapshots:/app/snapshots
       - ../skt-otw-ua-44615111-2-34043f78264e.json:/run/secrets/ga4-key.json:ro
+      - ../gyutae-test-project-f714548c9b52.json:/run/secrets/gemini-key.json:ro
     command: npm run serve
 
   scheduler:
