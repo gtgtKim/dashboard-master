@@ -11,6 +11,8 @@ const GEMINI_PROJECT = process.env.GEMINI_PROJECT_ID || process.env.GOOGLE_CLOUD
 const GEMINI_LOCATION = process.env.GEMINI_LOCATION || process.env.GOOGLE_CLOUD_LOCATION || 'global';
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3-flash-preview';
 const MAX_OUTPUT_TOKENS = positiveInteger(process.env.GEMINI_INSIGHTS_MAX_OUTPUT_TOKENS, 8192);
+const GEMINI_RETRY_ATTEMPTS = positiveInteger(process.env.GEMINI_INSIGHTS_RETRY_ATTEMPTS, 3);
+const GEMINI_RETRY_DELAY_MS = positiveInteger(process.env.GEMINI_INSIGHTS_RETRY_DELAY_MS, 12_000);
 
 export async function queryAiInsights({ targetId, startDate, endDate }) {
   validateDate(startDate, 'startDate');
@@ -65,7 +67,7 @@ async function buildInsightInput({ targetId, startDate, endDate }) {
         'Gentle Monster 메인페이지의 클릭 요소가 자주 바뀌고 각 요소의 tracking attribute와 GA4 성과를 파악하기 어려운 문제를 줄이기 위한 대시보드입니다.',
       snapshotRule: '봇이 매일 오전 10시 America/New_York 기준으로 PC/MO 메인페이지 HTML과 클릭 어트리뷰트 요소를 저장합니다.',
       periodRule:
-        '유지기간은 선택 기간 안에서 같은 tracking attribute 조합이 발견된 날짜 구간이며 YYYY-MM-DD ~ YYYY-MM-DD 형식입니다.',
+        '유지기간은 데이터 조회 기간 안에서 같은 tracking attribute 조합이 발견되어 유지된 날짜 구간이며 YYYY-MM-DD ~ YYYY-MM-DD 형식입니다. 예를 들어 2026-06-29 ~ 2026-06-29는 선택한 데이터 조회 기간 안에서 그 요소가 2026-06-29에만 관찰되었다는 뜻이지, 실제 서비스에서 그 요소가 2026-06-29에 처음 노출되었다는 뜻이 아닙니다.',
       rowRule:
         '표의 행은 같은 data-category/data-action/data-area/data-label 조합과 유지기간을 가진 요소를 병합할 수 있으며, occurrences에는 해당 요소의 실제 발견 위치가 들어갑니다.',
       previewRule:
@@ -245,7 +247,7 @@ async function generateGeminiInsight(analysis) {
     project: GEMINI_PROJECT,
     location: GEMINI_LOCATION,
   });
-  const response = await ai.models.generateContent({
+  const response = await generateGeminiContentWithRetry(ai, {
     model: GEMINI_MODEL,
     contents: [
       {
@@ -262,11 +264,28 @@ async function generateGeminiInsight(analysis) {
   return parseGeminiJson(response.text || '');
 }
 
+async function generateGeminiContentWithRetry(ai, params) {
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= GEMINI_RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      return await ai.models.generateContent(params);
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableGeminiError(error) || attempt >= GEMINI_RETRY_ATTEMPTS) break;
+      await delay(GEMINI_RETRY_DELAY_MS * attempt);
+    }
+  }
+
+  throw formatGeminiError(lastError);
+}
+
 function buildPrompt(analysis) {
   return [
     '너는 GA4와 이커머스 UX를 함께 보는 한국어 데이터 분석가다.',
     '아래 JSON만 근거로 Gentle Monster 메인페이지 인사이트를 작성해라.',
     '데이터에 없는 사실, 이미지 내용, 상품 판매 성과, 원인 단정은 추측하지 마라.',
+    '유지기간은 데이터 조회 기간 안에서 관찰된 기간이다. 유지기간 시작일을 실제 사이트 최초 노출일처럼 표현하지 마라.',
     '모든 클릭 요소와 위치/유지기간/GA4 수치를 고려하되, 중요한 포인트 위주로 압축해라.',
     '반드시 JSON만 출력해라. 마크다운 코드블록은 쓰지 마라.',
     '출력 스키마:',
@@ -458,4 +477,25 @@ function validateDate(value, name) {
 function positiveInteger(value, fallback) {
   const number = Number(value || fallback);
   return Number.isFinite(number) && number > 0 ? Math.floor(number) : fallback;
+}
+
+function isRetryableGeminiError(error) {
+  const status = Number(error?.status || 0);
+  const message = String(error?.message || '');
+  return status === 429 || status === 503 || /RESOURCE_EXHAUSTED|UNAVAILABLE/i.test(message);
+}
+
+function formatGeminiError(error) {
+  const status = Number(error?.status || 0);
+  const message = String(error?.message || '');
+
+  if (status === 429 || /RESOURCE_EXHAUSTED/i.test(message)) {
+    return new Error('Gemini API 사용량 또는 일시적 처리 용량이 초과되었습니다. 잠시 후 다시 시도해 주세요. 같은 기간/페이지에서 한 번 성공하면 이후에는 캐시된 결과를 사용합니다.');
+  }
+
+  return error instanceof Error ? error : new Error(message || 'Gemini 인사이트를 생성하지 못했습니다.');
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

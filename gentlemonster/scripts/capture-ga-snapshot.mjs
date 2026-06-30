@@ -4420,6 +4420,7 @@ function renderSnapshotCatalog() {
           <section class="help-section">
             <h3>유지기간</h3>
             <p>유지기간은 선택한 기간 안에서 같은 요소가 계속 발견된 날짜 구간입니다. 형식은 <strong>YYYY-MM-DD ~ YYYY-MM-DD</strong>입니다.</p>
+            <p><strong>유지기간은 데이터 조회 기간 안에서 관찰된 기간</strong>입니다. 예를 들어 <strong>2026-06-29 ~ 2026-06-29</strong>는 선택한 조회 기간 안에서 그 요소가 2026-06-29에만 발견되었다는 뜻이며, 실제 사이트에서 2026-06-29에 처음 노출되었다는 뜻은 아닙니다.</p>
             <p>중간에 요소가 사라졌다가 다시 생기거나, data-category/data-action/data-area/data-label 조합이 바뀌면 유지기간이 나뉠 수 있습니다.</p>
           </section>
           <section class="help-section">
