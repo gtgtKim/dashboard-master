@@ -7,11 +7,15 @@ import { makeGa4MetricKey, queryGa4Metrics } from './ga4-data-api.mjs';
 const SNAPSHOTS_ROOT = path.resolve('snapshots');
 const PROMPT_INSTRUCTIONS = Object.freeze([
   '너는 GA4와 이커머스 UX를 함께 보는 한국어 데이터 분석가다.',
-  '아래 JSON만 근거로 Gentle Monster 메인페이지 인사이트를 작성해라.',
+  '분석 대상은 Gentle Monster라는 회사의 미국(US) 공식 이커머스 사이트이며, /us/en 홈/메인페이지 데이터다.',
+  '아래 JSON만 근거로 Gentle Monster US 메인페이지 인사이트를 작성해라.',
   '데이터에 없는 사실, 이미지 내용, 상품 판매 성과, 원인 단정은 추측하지 마라.',
   '유지기간은 데이터 조회 기간 안에서 관찰된 기간이다. 유지기간 시작일을 실제 사이트 최초 노출일처럼 표현하지 마라.',
-  'Latest 영역과 Best 영역에는 상품 카드가 많다. data-action이 Latest 또는 Best인 상품 클릭은 별도의 상품 클릭 관점으로 반드시 분석해라.',
-  '모든 클릭 요소와 위치/유지기간/GA4 수치를 고려하되, 중요한 포인트 위주로 압축해라.',
+  'Latest 영역과 Best 영역에는 상품 카드가 많다. data-action이 Latest 또는 Best인 상품 클릭은 별도의 상품 클릭 관점으로 반드시 분석하되, 상품 인기도/판매 성과/선호도라고 단정하지 말고 메인페이지 클릭 신호라고 표현해라.',
+  'hidden, offscreen, inViewport 값은 캡처 DOM과 스냅샷 위치 정보다. 실제 사용자에게 보이지 않았다거나 스와이프가 활발했다는 식으로 단정하지 말고 해석 주의사항으로만 다뤄라.',
+  '목적형 이동, 즉각적 반응, 선호, 구매 결정, 압도적 성과처럼 사용자 의도나 원인을 단정하는 표현은 피하고, 클릭 수/세션/사용자 수/비중으로 관찰 사실을 말해라.',
+  '액션 제안은 화면 배치 변경을 단정적으로 권하지 말고, 추가 확인할 가설/검토 항목/태깅 점검 항목 중심으로 작성해라.',
+  '모든 클릭 요소와 위치/유지기간/GA4 수치를 고려하되, 중요한 포인트 위주로 압축하고 각 섹션에는 가능한 한 구체적인 수치를 포함해라.',
   '반드시 JSON만 출력해라. 마크다운 코드블록은 쓰지 마라.',
 ]);
 const PROMPT_OUTPUT_SCHEMA = Object.freeze({
@@ -89,7 +93,7 @@ async function buildInsightInput({ targetId, startDate, endDate }) {
   return {
     dashboardLogic: {
       purpose:
-        'Gentle Monster 메인페이지의 클릭 요소가 자주 바뀌고 각 요소의 tracking attribute와 GA4 성과를 파악하기 어려운 문제를 줄이기 위한 대시보드입니다.',
+        'Gentle Monster US 메인페이지의 클릭 요소가 자주 바뀌고 각 요소의 tracking attribute와 GA4 성과를 파악하기 어려운 문제를 줄이기 위한 대시보드입니다.',
       snapshotRule: '봇이 매일 오전 10시 America/New_York 기준으로 PC/MO 메인페이지 HTML과 클릭 어트리뷰트 요소를 저장합니다.',
       periodRule:
         '유지기간은 데이터 조회 기간 안에서 같은 tracking attribute 조합이 발견되어 유지된 날짜 구간이며 YYYY-MM-DD ~ YYYY-MM-DD 형식입니다. 예를 들어 2026-06-29 ~ 2026-06-29는 선택한 데이터 조회 기간 안에서 그 요소가 2026-06-29에만 관찰되었다는 뜻이지, 실제 서비스에서 그 요소가 2026-06-29에 처음 노출되었다는 뜻이 아닙니다.',
@@ -102,12 +106,15 @@ async function buildInsightInput({ targetId, startDate, endDate }) {
       wishlistRule:
         'add_to_wishlist 개별 상품 행은 eventCount를 표시하지 않고 표에서는 -로 보여줍니다. ecommerce/add_to_wishlist 그룹 행에만 eventName=add_to_wishlist, pagePath=/us/en 기준 전체 eventCount를 표시합니다. 개별 상품 행의 sessions/users는 itemName 기준으로 유지합니다.',
       productClickRule:
-        'Homepage / Latest와 Homepage / Best 영역에는 상품 카드가 많이 포함되어 있으므로 상품 클릭 분석에서 data-action=Latest 또는 Best, data-area, data-label, product_sku, 위치, GA4 수치를 함께 봐야 합니다.',
+        'Homepage / Latest와 Homepage / Best 영역에는 상품 카드가 많이 포함되어 있으므로 상품 클릭 분석에서 data-action=Latest 또는 Best, data-area, data-label, product_sku, 위치, GA4 수치를 함께 봐야 합니다. 다만 이 수치는 상품 판매 성과나 선호도가 아니라 메인페이지 내 클릭 신호입니다.',
       aiRule:
         'AI는 제공된 JSON에 있는 숫자와 위치 정보만 근거로 분석해야 하며, 데이터에 없는 사실을 추측하면 안 됩니다.',
     },
     page: {
       site: 'gentlemonster',
+      company: 'Gentle Monster',
+      market: 'US',
+      localePath: '/us/en',
       requestedUrl: latestTarget?.url || '',
       finalUrl: latestTarget?.finalUrl || '',
       targetId,

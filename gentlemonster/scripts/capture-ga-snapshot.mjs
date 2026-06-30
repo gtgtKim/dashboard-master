@@ -4027,19 +4027,28 @@ function renderSnapshotCatalog() {
       min-width: 0;
     }
 
+    .gemini-trigger-wrap {
+      position: relative;
+      display: inline-flex;
+      flex: 0 0 auto;
+      align-items: center;
+    }
+
     .gemini-trigger {
       width: 32px;
       min-width: 32px;
       padding: 0;
-      border-color: #b9c8df;
-      background: #f8fbff;
-      font-size: 15px;
+      border-color: #94bdf4;
+      background: #eef6ff;
+      color: #0b6bcb;
+      font-size: 18px;
       line-height: 1;
     }
 
     .gemini-trigger:hover {
       border-color: #0b6bcb;
-      background: #eef6ff;
+      background: #e2f0ff;
+      color: #0758a8;
     }
 
     .gemini-trigger:disabled {
@@ -4048,8 +4057,12 @@ function renderSnapshotCatalog() {
     }
 
     .gemini-hint {
-      position: relative;
-      max-width: min(320px, 48vw);
+      position: absolute;
+      z-index: 35;
+      top: calc(100% + 10px);
+      left: 50%;
+      width: max-content;
+      max-width: min(320px, 52vw);
       padding: 7px 10px;
       border: 1px solid #bed3ef;
       border-radius: 8px;
@@ -4060,19 +4073,21 @@ function renderSnapshotCatalog() {
       font-weight: 700;
       line-height: 1.35;
       white-space: normal;
+      pointer-events: none;
+      transform: translateX(-50%);
     }
 
     .gemini-hint::before {
       content: "";
       position: absolute;
-      top: 50%;
-      left: -6px;
+      top: -6px;
+      left: 50%;
       width: 10px;
       height: 10px;
+      border-top: 1px solid #bed3ef;
       border-left: 1px solid #bed3ef;
-      border-bottom: 1px solid #bed3ef;
       background: #fff;
-      transform: translateY(-50%) rotate(45deg);
+      transform: translateX(-50%) rotate(45deg);
     }
 
     .gemini-hint[hidden] {
@@ -4540,9 +4555,11 @@ function renderSnapshotCatalog() {
       <aside class="panel" id="attributePanel" aria-label="GA Attributes">
         <div class="panel-head">
           <div class="panel-title-row">
-            <button class="gemini-trigger" id="insightsTrigger" type="button" aria-label="Gemini 인사이트 생성">✨</button>
+            <span class="gemini-trigger-wrap">
+              <button class="gemini-trigger" id="insightsTrigger" type="button" aria-label="Gemini 인사이트 생성"><span aria-hidden="true">✦</span></button>
+              <span class="gemini-hint" id="insightsHint">클릭하면 Gemini 인사이트가 나옵니다.</span>
+            </span>
             <h2>GA Attributes</h2>
-            <span class="gemini-hint" id="insightsHint">클릭하면 Gemini 인사이트가 나옵니다.</span>
           </div>
           <div class="stats" id="panelMeta"></div>
         </div>
