@@ -246,17 +246,7 @@ async function dismissPopups(page) {
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const result = await page.evaluate(() => {
       const popupRootSelector = [
-        'dialog',
-        '[role="dialog"]',
-        '[aria-modal="true"]',
-        '[class*="popup" i]',
         '[id*="popup" i]',
-        '[class*="modal" i]',
-        '[id*="modal" i]',
-        '[class*="layer-pop" i]',
-        '[class*="layer_popup" i]',
-        '[id*="layer-pop" i]',
-        '[id*="layer_popup" i]',
       ].join(',');
 
       const closePattern =
@@ -1990,15 +1980,7 @@ async function collectGaElements(page, pageId) {
       return Boolean(
         element.closest(
           [
-            'dialog',
-            '[role="dialog"]',
-            '[aria-modal="true"]',
-            '[class*="popup" i]',
             '[id*="popup" i]',
-            '[class*="modal" i]',
-            '[id*="modal" i]',
-            '[class*="layer-pop" i]',
-            '[class*="layer_popup" i]',
           ].join(','),
         ),
       );
