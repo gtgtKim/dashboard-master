@@ -4791,11 +4791,11 @@ function renderSnapshotCatalog() {
           cache: 'no-store',
           headers: { Accept: 'application/json' },
         });
-        const payload = await response.json().catch(() => ({}));
+        const payload = await readGeminiApiPayload(response);
         if (requestId !== insightsRequestId) return;
 
-        if (!response.ok || payload.status === 'error') {
-          throw new Error(payload.error || 'Gemini 인사이트를 생성하지 못했습니다.');
+        if (!response.ok || payload.status !== 'ok') {
+          throw new Error(geminiApiErrorMessage(response, payload, 'Gemini 인사이트를 생성하지 못했습니다.'));
         }
 
         insightsStatus = {
@@ -4917,10 +4917,10 @@ function renderSnapshotCatalog() {
           },
           body: JSON.stringify({ targetId, startDate, endDate, question, history }),
         });
-        const payload = await response.json().catch(() => ({}));
+        const payload = await readGeminiApiPayload(response);
         if (requestId !== followUpRequestId) return;
-        if (!response.ok || payload.status === 'error') {
-          throw new Error(payload.error || '추가 질문에 답하지 못했습니다.');
+        if (!response.ok || payload.status !== 'ok') {
+          throw new Error(geminiApiErrorMessage(response, payload, '추가 질문에 답하지 못했습니다.'));
         }
 
         followUpConversation.push({
@@ -4948,6 +4948,26 @@ function renderSnapshotCatalog() {
       renderGeminiInsights();
       if (followUpState.state === 'ok') scrollLatestFollowUpAnswerIntoView();
       else scrollFollowUpToBottom();
+    }
+
+    async function readGeminiApiPayload(response) {
+      const responseText = await response.text();
+      try {
+        return JSON.parse(responseText);
+      } catch {
+        return {};
+      }
+    }
+
+    function geminiApiErrorMessage(response, payload, fallback) {
+      if (payload?.error) return String(payload.error);
+      if (response.status === 504) {
+        return 'Gemini 분석 시간이 길어 서버 연결이 만료되었습니다. 잠시 후 같은 조건으로 다시 시도해 주세요. 완료된 결과가 캐시되어 있을 수 있습니다. (HTTP 504)';
+      }
+      if (response.status === 401) {
+        return '로그인 세션이 만료되었습니다. 페이지를 새로고침한 뒤 다시 로그인해 주세요. (HTTP 401)';
+      }
+      return fallback + ' (HTTP ' + response.status + ')';
     }
 
     function buildFollowUpHistory() {

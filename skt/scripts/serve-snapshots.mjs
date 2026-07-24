@@ -16,6 +16,7 @@ const DASHBOARD_COOKIE_DAYS = Number(process.env.DASHBOARD_COOKIE_DAYS || 7);
 const REQUIRE_HTTPS = process.env.DASHBOARD_REQUIRE_HTTPS === 'true';
 const GEMINI_INSIGHTS_ENABLED = process.env.GEMINI_INSIGHTS_ENABLED !== 'false';
 const BASE_PATH = normalizeBasePath(process.env.BASE_PATH || '');
+const activeAiRequests = new Map();
 
 const server = http.createServer(async (request, response) => {
   try {
@@ -156,7 +157,8 @@ async function handleAiInsights(url, response) {
   }
 
   try {
-    const result = await queryAiInsights({ targetId, startDate, endDate });
+    const requestKey = `insight:${targetId}:${startDate}:${endDate}`;
+    const result = await runSharedAiRequest(requestKey, () => queryAiInsights({ targetId, startDate, endDate }));
     sendJson(response, 200, result);
   } catch (error) {
     sendJson(response, 500, {
@@ -189,7 +191,16 @@ async function handleAiFollowUp(request, response) {
   }
 
   try {
-    const result = await queryAiFollowUp({ targetId, startDate, endDate, question, history });
+    const requestKey = `follow-up:${JSON.stringify({
+      targetId,
+      startDate,
+      endDate,
+      question: question.replace(/\s+/g, ' ').trim(),
+      history,
+    })}`;
+    const result = await runSharedAiRequest(requestKey, () =>
+      queryAiFollowUp({ targetId, startDate, endDate, question, history }),
+    );
     sendJson(response, 200, result);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -199,6 +210,19 @@ async function handleAiFollowUp(request, response) {
       error: message,
     });
   }
+}
+
+function runSharedAiRequest(key, requestFactory) {
+  const activeRequest = activeAiRequests.get(key);
+  if (activeRequest) return activeRequest;
+
+  const request = Promise.resolve().then(requestFactory);
+  activeAiRequests.set(key, request);
+  const cleanup = () => {
+    if (activeAiRequests.get(key) === request) activeAiRequests.delete(key);
+  };
+  request.then(cleanup, cleanup);
+  return request;
 }
 
 async function serveSnapshotFile(pathname, request, response) {
