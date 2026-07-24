@@ -3,7 +3,7 @@ import fsp from 'node:fs/promises';
 import crypto from 'node:crypto';
 import http from 'node:http';
 import path from 'node:path';
-import { queryAiInsights } from './ai-insights-api.mjs';
+import { queryAiFollowUp, queryAiInsights } from './ai-insights-api.mjs';
 import { queryGa4Metrics } from './ga4-data-api.mjs';
 
 const SNAPSHOTS_ROOT = path.resolve('snapshots');
@@ -64,6 +64,16 @@ const server = http.createServer(async (request, response) => {
       }
 
       await handleAiInsights(url, response);
+      return;
+    }
+
+    if (request.method === 'POST' && appPath === '/api/ai-insights/follow-up') {
+      if (!GEMINI_INSIGHTS_ENABLED) {
+        sendJson(response, 501, { status: 'disabled', error: 'Gemini insights are disabled for now.' });
+        return;
+      }
+
+      await handleAiFollowUp(request, response);
       return;
     }
 
@@ -152,6 +162,41 @@ async function handleAiInsights(url, response) {
     sendJson(response, 500, {
       status: 'error',
       error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+async function handleAiFollowUp(request, response) {
+  let body;
+  try {
+    body = JSON.parse(await readRequestBody(request, 64_000));
+  } catch (error) {
+    sendJson(response, 400, {
+      status: 'error',
+      error: error instanceof Error ? error.message : 'Invalid JSON request body.',
+    });
+    return;
+  }
+
+  const targetId = String(body?.targetId || '');
+  const startDate = String(body?.startDate || '');
+  const endDate = String(body?.endDate || '');
+  const question = String(body?.question || '');
+  const history = Array.isArray(body?.history) ? body.history : [];
+  if (!targetId || !question.trim()) {
+    sendJson(response, 400, { status: 'error', error: 'targetId and question are required.' });
+    return;
+  }
+
+  try {
+    const result = await queryAiFollowUp({ targetId, startDate, endDate, question, history });
+    sendJson(response, 200, result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const clientError = /required|characters or fewer|must be YYYY-MM-DD|earlier than or equal/i.test(message);
+    sendJson(response, clientError ? 400 : 500, {
+      status: 'error',
+      error: message,
     });
   }
 }
@@ -371,12 +416,12 @@ function constantTimeEqual(left, right) {
   return crypto.timingSafeEqual(leftBuffer, rightBuffer);
 }
 
-async function readRequestBody(request) {
+async function readRequestBody(request, maxBytes = 10_000) {
   const chunks = [];
   let size = 0;
   for await (const chunk of request) {
     size += chunk.length;
-    if (size > 10_000) throw new Error('Request body is too large.');
+    if (size > maxBytes) throw new Error('Request body is too large.');
     chunks.push(chunk);
   }
   return Buffer.concat(chunks).toString('utf8');

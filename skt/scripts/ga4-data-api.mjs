@@ -1,6 +1,7 @@
 import analyticsData from '@google-analytics/data';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { normalizeSktGaActionForRange } from './skt-tracking-normalization.mjs';
 
 const { BetaAnalyticsDataClient } = analyticsData;
 
@@ -88,7 +89,13 @@ export async function queryGa4Metrics({ targetId, startDate, endDate }) {
 
   for (const row of response.rows || []) {
     const [action = '', label = ''] = (row.dimensionValues || []).map((value) => value.value || '');
-    const key = makeGa4MetricKey(action || '(missing)', label);
+    const canonicalAction = normalizeSktGaActionForRange({
+      targetId,
+      startDate,
+      endDate,
+      action: action || '(missing)',
+    });
+    const key = makeGa4MetricKey(canonicalAction, label);
     const rowMetrics = {
       eventCount: numberFromMetric(row.metricValues?.[0]?.value),
       sessions: numberFromMetric(row.metricValues?.[1]?.value),

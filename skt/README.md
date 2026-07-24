@@ -43,6 +43,15 @@ Do not commit these files or folders:
 
 The GA4 service account JSON must exist on the host and is mounted into the container as read-only.
 
+Gemini insights use `gemini-3.1-pro-preview` with high thinking by default. Repeated daily
+element observations are compacted before the request, and oversized periods are analyzed
+in chunks. The defaults can be changed with `GEMINI_MODEL`,
+`GEMINI_INSIGHTS_MAX_INPUT_TOKENS`, and `GEMINI_INSIGHTS_CHUNK_INPUT_TOKENS`.
+After the first insight is ready, the SKT dashboard can send follow-up questions with the
+recent conversation as context. Identical page, period, question, and conversation requests
+are cached under `snapshots/ai-follow-ups/`; changing the model or follow-up prompt version
+automatically uses a new cache key.
+
 ## Production On GCP VM
 
 The intended production pattern is:

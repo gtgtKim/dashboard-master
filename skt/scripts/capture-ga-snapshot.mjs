@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import sharp from 'sharp';
 import { GA4_CONFIG, makeGa4MetricKey } from './ga4-data-api.mjs';
+import { SKT_TRACKING_CORRECTIONS } from './skt-tracking-normalization.mjs';
 
 const OUTPUT_ROOT = path.resolve('snapshots');
 const RUN_ID = process.env.RUN_ID || timestampForPath(new Date());
@@ -978,7 +979,7 @@ function renderStaticReviewShell({ target, pageMeta, contentHtml, elements }) {
 
     .toolbar {
       display: grid;
-      grid-template-columns: minmax(180px, 1fr) auto;
+      grid-template-columns: minmax(180px, 1fr) minmax(170px, 210px) auto;
       gap: 8px;
       align-items: center;
       padding: 10px 12px;
@@ -3250,6 +3251,12 @@ function renderSnapshotCatalog() {
       min-width: 0;
     }
 
+    .insights-head > button {
+      flex: 0 0 auto;
+      min-width: 52px;
+      white-space: nowrap;
+    }
+
     .insights-title {
       display: grid;
       gap: 3px;
@@ -3266,6 +3273,7 @@ function renderSnapshotCatalog() {
     .insights-body {
       display: grid;
       gap: 10px;
+      align-content: start;
       height: var(--insights-body-height, 260px);
       overflow: auto;
       color: #303b4d;
@@ -3275,6 +3283,11 @@ function renderSnapshotCatalog() {
 
     .insights-body[hidden] {
       display: none;
+    }
+
+    .insights-content {
+      display: grid;
+      gap: 10px;
     }
 
     .insights-body h3 {
@@ -3299,6 +3312,170 @@ function renderSnapshotCatalog() {
     .insights-status {
       color: #687486;
       font-weight: 700;
+    }
+
+    .insights-chat {
+      display: grid;
+      gap: 9px;
+      padding-top: 10px;
+      border-top: 1px solid #dfe5ee;
+    }
+
+    .insights-chat[hidden] {
+      display: none;
+    }
+
+    .insights-chat-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .insights-chat-head strong {
+      color: #172033;
+      font-size: 12px;
+    }
+
+    .insights-chat-clear {
+      width: 28px;
+      min-width: 28px;
+      height: 28px;
+      padding: 0;
+      background: transparent;
+      color: #687486;
+      font-size: 15px;
+    }
+
+    .insights-chat-messages {
+      display: grid;
+      gap: 8px;
+    }
+
+    .insights-chat-messages:empty {
+      display: none;
+    }
+
+    .chat-message {
+      display: grid;
+      gap: 5px;
+      width: min(92%, 720px);
+      padding: 8px 10px;
+      border-radius: 6px;
+      line-height: 1.55;
+      white-space: normal;
+    }
+
+    .chat-message.user {
+      justify-self: end;
+      background: #e8f3ff;
+      color: #143f6b;
+    }
+
+    .chat-message.assistant {
+      justify-self: start;
+      border: 1px solid #dfe5ee;
+      background: #fff;
+      color: #303b4d;
+    }
+
+    .chat-message p {
+      margin: 0;
+      white-space: pre-wrap;
+    }
+
+    .chat-message strong {
+      color: #172033;
+      font-size: 11px;
+    }
+
+    .chat-message ul {
+      margin: 0;
+      padding-left: 17px;
+    }
+
+    .chat-suggestions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-top: 2px;
+    }
+
+    .chat-suggestion {
+      height: auto;
+      min-height: 28px;
+      padding: 5px 7px;
+      border-color: #bed3ef;
+      border-radius: 4px;
+      background: #f4f9ff;
+      color: #0b5ead;
+      font-size: 11px;
+      text-align: left;
+      white-space: normal;
+    }
+
+    .insights-chat-form {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 34px;
+      gap: 6px;
+      align-items: end;
+    }
+
+    .insights-chat-input {
+      width: 100%;
+      min-height: 36px;
+      max-height: 108px;
+      resize: none;
+      padding: 8px 10px;
+      border: 1px solid #cfd7e5;
+      border-radius: 6px;
+      background: #fff;
+      color: #1d2430;
+      font: inherit;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .insights-chat-input:focus {
+      border-color: #0b6bcb;
+      outline: 2px solid rgba(11, 107, 203, 0.14);
+      outline-offset: 0;
+    }
+
+    .insights-chat-send {
+      width: 34px;
+      min-width: 34px;
+      height: 36px;
+      padding: 0;
+      border-color: #0b6bcb;
+      background: #0b6bcb;
+      color: #fff;
+      font-size: 18px;
+      line-height: 1;
+    }
+
+    .insights-chat-send:hover {
+      background: #0758a8;
+      color: #fff;
+    }
+
+    .insights-chat-send:disabled,
+    .insights-chat-clear:disabled,
+    .insights-chat-input:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+    }
+
+    .insights-chat-status {
+      min-height: 16px;
+      margin: 0;
+      color: #687486;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .insights-chat-status.error {
+      color: #c73922;
     }
 
     .insights-resizer {
@@ -3398,10 +3575,43 @@ function renderSnapshotCatalog() {
       position: sticky;
       top: 0;
       z-index: 1;
+      padding: 0 17px 0 5px;
       overflow: visible;
       background: #fbfcfe;
       color: #596579;
       font-size: 11px;
+    }
+
+    .sort-button {
+      display: inline-flex;
+      width: 100%;
+      height: 30px;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 5px;
+      padding: 0 4px;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      font-size: inherit;
+      text-align: left;
+    }
+
+    .metric-sort .sort-button {
+      justify-content: flex-end;
+    }
+
+    .sort-button:hover {
+      border-color: transparent;
+      color: #0b6bcb;
+    }
+
+    .sort-indicator {
+      width: 10px;
+      color: #0b6bcb;
+      font-size: 10px;
+      line-height: 1;
+      text-align: center;
     }
 
     .col-resizer {
@@ -3507,6 +3717,100 @@ function renderSnapshotCatalog() {
       font-weight: 700;
     }
 
+    .period-button {
+      display: grid;
+      width: 100%;
+      height: auto;
+      gap: 3px;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: #0b6bcb;
+      text-align: left;
+    }
+
+    .period-button:hover {
+      border-color: transparent;
+      color: #084f98;
+    }
+
+    .period-primary {
+      overflow: hidden;
+      font-weight: 700;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .period-meta {
+      color: #687486;
+      font-size: 10px;
+      font-weight: 600;
+    }
+
+    .period-popover {
+      position: fixed;
+      z-index: 100;
+      width: min(370px, calc(100vw - 24px));
+      max-height: min(420px, calc(100vh - 24px));
+      overflow: auto;
+      padding: 12px;
+      border: 1px solid #cfd7e5;
+      border-radius: 6px;
+      background: #fff;
+      box-shadow: 0 14px 36px rgba(23, 32, 51, 0.2);
+      color: #263244;
+      user-select: text;
+    }
+
+    .period-popover[hidden] {
+      display: none;
+    }
+
+    .period-popover-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+
+    .period-popover-head strong {
+      font-size: 12px;
+    }
+
+    .period-popover-close {
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      font-size: 18px;
+      line-height: 1;
+    }
+
+    .period-popover-summary {
+      margin: 0 0 8px;
+      color: #687486;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .period-popover-list {
+      display: grid;
+      gap: 5px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .period-popover-list li {
+      padding: 6px 8px;
+      border-left: 3px solid #0b6bcb;
+      background: #f6f8fb;
+      color: #1d2430;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
     code {
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       font-size: 11px;
@@ -3567,6 +3871,14 @@ function renderSnapshotCatalog() {
 
       .date-controls {
         grid-template-columns: 1fr;
+      }
+
+      .toolbar {
+        grid-template-columns: minmax(0, 1fr) minmax(150px, 190px);
+      }
+
+      .toolbar-actions {
+        grid-column: 1 / -1;
       }
 
       .panel {
@@ -3639,8 +3951,9 @@ function renderSnapshotCatalog() {
           </section>
           <section class="help-section">
             <h3>Gemini 인사이트</h3>
-            <p>GA Attributes 왼쪽의 Gemini 아이콘을 누르면 선택한 기간과 페이지의 모든 클릭 요소, 위치, 유지기간, GA4 수치, 대시보드 해석 규칙을 요약해 Gemini 3 Flash로 분석합니다. 같은 기간과 페이지, 같은 프롬프트는 캐시된 결과를 다시 보여주고, 프롬프트가 바뀌면 새로 생성합니다.</p>
+            <p>GA Attributes 왼쪽의 Gemini 아이콘을 누르면 선택한 기간과 페이지의 모든 클릭 요소, 위치, 유지기간, GA4 수치, 대시보드 해석 규칙을 Gemini 3.1 Pro로 분석합니다. 날짜별 중복 관찰은 요소별 기간과 위치 변화로 압축하고, 입력이 클 때는 영역별로 나누어 분석한 뒤 통합합니다. 같은 기간과 페이지, 같은 모델과 프롬프트는 캐시된 결과를 다시 보여줍니다.</p>
             <p>SKT T world Shop 메인페이지 기준으로 메인 배너, 휴대폰 구매/추천, 요금제, 나만의 꿀 요금제, 이벤트/혜택 등 콘텐츠 영역별 클릭 흐름과 태깅 해석 주의사항을 함께 검토합니다.</p>
+            <p>기본 인사이트 아래의 <strong>추가 질문</strong> 입력란에서 특정 영역 비교, 수치 근거, 유지기간 변화처럼 더 궁금한 내용을 이어서 물을 수 있습니다. 같은 대화의 최근 질문과 답변을 문맥으로 사용하며, 페이지 또는 조회 기간을 바꾸면 대화는 초기화됩니다.</p>
             <p>결과 칸이 열린 뒤에는 칸 하단 경계선을 위아래로 드래그해서 인사이트 영역 높이를 조정할 수 있습니다.</p>
           </section>
           <section class="help-section">
@@ -3658,6 +3971,7 @@ function renderSnapshotCatalog() {
               <li><strong>전체 펼치기/전체 접기</strong>로 ga_action 그룹을 한 번에 열고 닫을 수 있습니다.</li>
               <li>각 ga_action 그룹 행을 클릭하면 해당 그룹만 접거나 펼칩니다.</li>
               <li>검색창에서 ga_action, ga_label, 유지기간을 검색할 수 있습니다.</li>
+              <li>정렬 메뉴 또는 열 제목을 눌러 화면 순서, GA4 수치, 유지기간, GA 어트리뷰트 기준으로 정렬할 수 있습니다.</li>
               <li>열 경계선을 드래그해서 표 열 너비를 조정할 수 있습니다.</li>
               <li>왼쪽 화면과 표 사이 경계선을 드래그해서 화면 비율을 조정할 수 있습니다.</li>
             </ul>
@@ -3666,6 +3980,7 @@ function renderSnapshotCatalog() {
             <h3>유지기간</h3>
             <p>유지기간은 선택한 기간 안에서 같은 요소가 계속 발견된 날짜 구간입니다. 형식은 <strong>YYYY-MM-DD ~ YYYY-MM-DD</strong>입니다.</p>
             <p>중간에 요소가 사라졌다가 다시 생기거나, ga_action/ga_label 조합이 바뀌면 유지기간이 나뉠 수 있습니다.</p>
+            <p>표에는 가장 최근 구간을 우선 표시합니다. 유지기간 셀을 누르면 선택 기간 안의 모든 구간과 총 관찰일을 확인할 수 있습니다.</p>
           </section>
           <section class="help-section">
             <h3>자동 수집</h3>
@@ -3704,11 +4019,44 @@ function renderSnapshotCatalog() {
             </div>
             <button id="insightsButton" type="button">생성</button>
           </div>
-          <div class="insights-body" id="insightsBody" hidden></div>
+          <div class="insights-body" id="insightsBody" hidden>
+            <div class="insights-content" id="insightsContent"></div>
+            <section class="insights-chat" id="insightsChat" aria-label="Gemini 추가 질문" hidden>
+              <div class="insights-chat-head">
+                <strong>추가 질문</strong>
+                <button class="insights-chat-clear" id="followUpClear" type="button" aria-label="대화 초기화" title="대화 초기화">↺</button>
+              </div>
+              <div class="insights-chat-messages" id="followUpMessages" role="log" aria-live="polite"></div>
+              <form class="insights-chat-form" id="followUpForm">
+                <textarea class="insights-chat-input" id="followUpInput" rows="1" maxlength="1000" aria-label="Gemini 추가 질문" placeholder="추가로 궁금한 내용을 질문하세요"></textarea>
+                <button class="insights-chat-send" id="followUpSend" type="submit" aria-label="질문 보내기" title="질문 보내기">↑</button>
+              </form>
+              <p class="insights-chat-status" id="followUpStatus" aria-live="polite"></p>
+            </section>
+          </div>
           <div class="insights-resizer" id="insightsResizer" role="separator" aria-orientation="horizontal" aria-label="Resize Gemini insights"></div>
         </section>
         <div class="toolbar">
           <input id="filterInput" type="search" placeholder="ga_action, ga_label 검색">
+          <select id="sortSelect" aria-label="표 정렬">
+            <option value="screen:asc">화면 순서</option>
+            <option value="eventCount:desc">이벤트 수 높은순</option>
+            <option value="eventCount:asc">이벤트 수 낮은순</option>
+            <option value="sessions:desc">세션 수 높은순</option>
+            <option value="sessions:asc">세션 수 낮은순</option>
+            <option value="activeUsers:desc">사용자 수 높은순</option>
+            <option value="activeUsers:asc">사용자 수 낮은순</option>
+            <option value="lastSeen:desc">최근까지 유지된 순</option>
+            <option value="lastSeen:asc">오래전에 종료된 순</option>
+            <option value="firstSeen:asc">최초 관찰일 빠른순</option>
+            <option value="firstSeen:desc">최초 관찰일 최근순</option>
+            <option value="observedDays:desc">총 관찰일 긴순</option>
+            <option value="observedDays:asc">총 관찰일 짧은순</option>
+            <option value="action:asc">ga_action 가나다순</option>
+            <option value="action:desc">ga_action 역순</option>
+            <option value="label:asc">ga_label 가나다순</option>
+            <option value="label:desc">ga_label 역순</option>
+          </select>
           <div class="toolbar-actions">
             <button id="expandAll" type="button">전체 펼치기</button>
             <button id="collapseAll" type="button">전체 접기</button>
@@ -3717,21 +4065,21 @@ function renderSnapshotCatalog() {
         <div class="table-wrap" id="tableWrap">
           <table id="gaTable">
             <colgroup id="tableColGroup">
-              <col style="width: 145px">
-              <col style="width: 225px">
-              <col style="width: 135px">
-              <col style="width: 105px">
-              <col style="width: 105px">
-              <col style="width: 105px">
+              <col style="width: 140px">
+              <col style="width: 205px">
+              <col style="width: 165px">
+              <col style="width: 103px">
+              <col style="width: 103px">
+              <col style="width: 104px">
             </colgroup>
             <thead>
               <tr>
-                <th>ga_action<span class="col-resizer" data-col-index="0"></span></th>
-                <th>ga_label<span class="col-resizer" data-col-index="1"></span></th>
-                <th>유지 기간<span class="col-resizer" data-col-index="2"></span></th>
-                <th>이벤트 수<span class="col-resizer" data-col-index="3"></span></th>
-                <th>세션 수<span class="col-resizer" data-col-index="4"></span></th>
-                <th>사용자 수<span class="col-resizer" data-col-index="5"></span></th>
+                <th data-sort-key="action" aria-sort="none"><button class="sort-button" type="button"><span>ga_action</span><span class="sort-indicator" aria-hidden="true"></span></button><span class="col-resizer" data-col-index="0"></span></th>
+                <th data-sort-key="label" aria-sort="none"><button class="sort-button" type="button"><span>ga_label</span><span class="sort-indicator" aria-hidden="true"></span></button><span class="col-resizer" data-col-index="1"></span></th>
+                <th data-sort-key="lastSeen" aria-sort="none"><button class="sort-button" type="button"><span>유지 기간</span><span class="sort-indicator" aria-hidden="true"></span></button><span class="col-resizer" data-col-index="2"></span></th>
+                <th class="metric-sort" data-sort-key="eventCount" aria-sort="none"><button class="sort-button" type="button"><span>이벤트 수</span><span class="sort-indicator" aria-hidden="true"></span></button><span class="col-resizer" data-col-index="3"></span></th>
+                <th class="metric-sort" data-sort-key="sessions" aria-sort="none"><button class="sort-button" type="button"><span>세션 수</span><span class="sort-indicator" aria-hidden="true"></span></button><span class="col-resizer" data-col-index="4"></span></th>
+                <th class="metric-sort" data-sort-key="activeUsers" aria-sort="none"><button class="sort-button" type="button"><span>사용자 수</span><span class="sort-indicator" aria-hidden="true"></span></button><span class="col-resizer" data-col-index="5"></span></th>
               </tr>
             </thead>
             <tbody id="periodRows"></tbody>
@@ -3739,8 +4087,17 @@ function renderSnapshotCatalog() {
         </div>
       </aside>
     </section>
+    <aside class="period-popover" id="periodPopover" role="dialog" aria-label="전체 유지 기간" hidden>
+      <div class="period-popover-head">
+        <strong>전체 유지 기간</strong>
+        <button class="period-popover-close" id="periodPopoverClose" type="button" aria-label="유지 기간 닫기">×</button>
+      </div>
+      <p class="period-popover-summary" id="periodPopoverSummary"></p>
+      <ul class="period-popover-list" id="periodPopoverList"></ul>
+    </aside>
   </main>
   <script>
+    const TRACKING_CORRECTIONS = ${jsonForInlineScript(SKT_TRACKING_CORRECTIONS)};
     const targetSelect = document.getElementById('targetSelect');
     const startDateInput = document.getElementById('startDate');
     const endDateInput = document.getElementById('endDate');
@@ -3752,6 +4109,7 @@ function renderSnapshotCatalog() {
     const splitter = document.getElementById('splitter');
     const contentFrame = document.getElementById('contentFrame');
     const filterInput = document.getElementById('filterInput');
+    const sortSelect = document.getElementById('sortSelect');
     const expandAllButton = document.getElementById('expandAll');
     const collapseAllButton = document.getElementById('collapseAll');
     const insightsTopButton = document.getElementById('insightsTopButton');
@@ -3762,6 +4120,14 @@ function renderSnapshotCatalog() {
     const insightsPanel = document.getElementById('insightsPanel');
     const insightsMeta = document.getElementById('insightsMeta');
     const insightsBody = document.getElementById('insightsBody');
+    const insightsContent = document.getElementById('insightsContent');
+    const insightsChat = document.getElementById('insightsChat');
+    const followUpClear = document.getElementById('followUpClear');
+    const followUpMessages = document.getElementById('followUpMessages');
+    const followUpForm = document.getElementById('followUpForm');
+    const followUpInput = document.getElementById('followUpInput');
+    const followUpSend = document.getElementById('followUpSend');
+    const followUpStatus = document.getElementById('followUpStatus');
     const insightsResizer = document.getElementById('insightsResizer');
     const helpButton = document.getElementById('helpButton');
     const introTip = document.getElementById('introTip');
@@ -3776,6 +4142,10 @@ function renderSnapshotCatalog() {
     const gaTable = document.getElementById('gaTable');
     const tableColGroup = document.getElementById('tableColGroup');
     const periodRows = document.getElementById('periodRows');
+    const periodPopover = document.getElementById('periodPopover');
+    const periodPopoverClose = document.getElementById('periodPopoverClose');
+    const periodPopoverSummary = document.getElementById('periodPopoverSummary');
+    const periodPopoverList = document.getElementById('periodPopoverList');
     const HELP_SEEN_KEY = 'ga-snapshot-help-seen-v3';
     const INSIGHTS_HEIGHT_KEY = 'ga-snapshot-skt-insights-height-v1';
     const GEMINI_HINT_DISMISSED_KEY = 'ga-snapshot-skt-gemini-hint-dismissed-v1';
@@ -3808,7 +4178,7 @@ function renderSnapshotCatalog() {
       {
         target: '#insightsTrigger',
         title: 'Gemini 인사이트',
-        body: '이 아이콘을 누르면 선택한 기간과 페이지의 모든 클릭 요소, 위치, GA4 데이터를 Gemini로 요약합니다. 결과가 열리면 하단 경계선을 위아래로 드래그해 높이를 조절할 수 있습니다.',
+        body: '이 아이콘을 누르면 선택한 기간과 페이지의 모든 클릭 요소, 위치, GA4 데이터를 Gemini로 요약합니다. 결과 아래에서 추가 질문을 이어갈 수 있고, 하단 경계선을 위아래로 드래그해 높이를 조절할 수 있습니다.',
       },
       {
         target: '.toolbar-actions',
@@ -3850,6 +4220,12 @@ function renderSnapshotCatalog() {
     let ga4RequestId = 0;
     let ga4RefreshTimer = null;
     let insightsRequestId = 0;
+    let followUpRequestId = 0;
+    let followUpConversation = [];
+    let followUpState = { state: 'idle', message: '' };
+    let sortState = { key: 'screen', direction: 'asc' };
+    let activePeriodRecordKey = null;
+    let activePeriodAnchor = null;
     let ga4Status = {
       state: 'idle',
       message: '대기',
@@ -3914,6 +4290,9 @@ function renderSnapshotCatalog() {
 
       const hash = readHashState();
       if (hash.target && seen.has(hash.target)) targetSelect.value = hash.target;
+      sortState = parseSortValue(hash.sort);
+      sortSelect.value = sortValue(sortState);
+      updateSortHeaders();
 
       const dates = runsAscending.map((run) => run.date);
       const minDate = dates[0] || '';
@@ -3931,6 +4310,23 @@ function renderSnapshotCatalog() {
       startDateInput.addEventListener('change', updatePeriodView);
       endDateInput.addEventListener('change', updatePeriodView);
       filterInput.addEventListener('input', renderPeriodRows);
+      sortSelect.addEventListener('change', () => {
+        setSortState(parseSortValue(sortSelect.value));
+      });
+      for (const button of document.querySelectorAll('th[data-sort-key] .sort-button')) {
+        button.addEventListener('click', (event) => {
+          const key = button.closest('th')?.dataset.sortKey || 'screen';
+          const defaultDirection = ['eventCount', 'sessions', 'activeUsers', 'lastSeen', 'observedDays'].includes(key)
+            ? 'desc'
+            : 'asc';
+          const direction = sortState.key === key
+            ? sortState.direction === 'asc' ? 'desc' : 'asc'
+            : defaultDirection;
+          setSortState({ key, direction });
+          event.preventDefault();
+          event.stopPropagation();
+        });
+      }
       expandAllButton.addEventListener('click', () => {
         collapsedGroups.clear();
         renderPeriodRows();
@@ -3947,21 +4343,51 @@ function renderSnapshotCatalog() {
         dismissGeminiHint();
       });
       insightsButton.addEventListener('click', requestGeminiInsights);
+      followUpForm.addEventListener('submit', (event) => {
+        event.preventDefault();
+        requestGeminiFollowUp();
+      });
+      followUpInput.addEventListener('input', resizeFollowUpInput);
+      followUpInput.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
+        event.preventDefault();
+        requestGeminiFollowUp();
+      });
+      followUpClear.addEventListener('click', clearFollowUpConversation);
+      followUpMessages.addEventListener('click', (event) => {
+        const button = event.target.closest?.('[data-follow-up-question]');
+        if (!button) return;
+        followUpInput.value = button.dataset.followUpQuestion || '';
+        resizeFollowUpInput();
+        followUpInput.focus();
+      });
       helpButton.addEventListener('click', openHelp);
       tourNext.addEventListener('click', advanceIntroTip);
       helpClose.addEventListener('click', closeHelp);
       helpCloseBottom.addEventListener('click', closeHelp);
+      periodPopoverClose.addEventListener('click', closePeriodPopover);
+      document.addEventListener('pointerdown', (event) => {
+        if (periodPopover.hidden || periodPopover.contains(event.target) || event.target.closest?.('.period-button')) return;
+        closePeriodPopover();
+      });
       helpModal.addEventListener('click', (event) => {
         if (event.target === helpModal) closeHelp();
       });
       window.addEventListener('keydown', (event) => {
         if (event.key === 'Escape') {
+          closePeriodPopover();
           closeHelp();
           hideIntroTip();
         }
       });
-      window.addEventListener('resize', scheduleLayoutSync);
-      window.addEventListener('scroll', scheduleLayoutSync, true);
+      window.addEventListener('resize', () => {
+        scheduleLayoutSync();
+        if (activePeriodAnchor) positionPeriodPopover(activePeriodAnchor);
+      });
+      window.addEventListener('scroll', () => {
+        scheduleLayoutSync();
+        closePeriodPopover();
+      }, true);
       window.addEventListener('load', scheduleStartupLayoutSync);
       window.addEventListener('pageshow', scheduleStartupLayoutSync);
       contentFrame.addEventListener('load', () => {
@@ -3987,7 +4413,7 @@ function renderSnapshotCatalog() {
 
     function installColumnResizers() {
       const cols = Array.from(tableColGroup.children);
-      const minWidths = [120, 160, 120, 90, 90, 90];
+      const minWidths = [120, 150, 145, 85, 85, 85];
 
       for (const handle of document.querySelectorAll('.col-resizer')) {
         handle.addEventListener('pointerdown', (event) => {
@@ -4194,6 +4620,7 @@ function renderSnapshotCatalog() {
       activeRecordKey = null;
       focusCycleByRecord.clear();
       collapsedGroups.clear();
+      closePeriodPopover();
       renderStatusRow(runs.length ? '요소 데이터를 불러오는 중입니다.' : '선택 기간에 저장된 데이터가 없습니다.');
       updateMeta(runs, latestRun, latestTarget);
       updateHash();
@@ -4314,6 +4741,8 @@ function renderSnapshotCatalog() {
     }
 
     function resetGeminiInsights(hasRuns) {
+      insightsRequestId += 1;
+      resetFollowUpConversation();
       insightsStatus = {
         state: hasRuns ? 'idle' : 'disabled',
         message: hasRuns ? '생성 전' : '선택 기간에 저장된 데이터가 없습니다.',
@@ -4393,7 +4822,10 @@ function renderSnapshotCatalog() {
     }
 
     function renderGeminiInsights() {
-      const isBusyOrDisabled = insightsStatus.state === 'loading' || insightsStatus.state === 'disabled';
+      const isBusyOrDisabled =
+        insightsStatus.state === 'loading' ||
+        insightsStatus.state === 'disabled' ||
+        followUpState.state === 'loading';
       insightsButton.disabled = isBusyOrDisabled;
       insightsTopButton.disabled = isBusyOrDisabled;
       insightsTrigger.disabled = isBusyOrDisabled;
@@ -4406,7 +4838,8 @@ function renderSnapshotCatalog() {
         insightsButton.textContent = '생성';
         insightsMeta.textContent = insightsStatus.message;
         insightsBody.hidden = true;
-        insightsBody.innerHTML = '';
+        insightsContent.innerHTML = '';
+        insightsChat.hidden = true;
         return;
       }
 
@@ -4415,7 +4848,8 @@ function renderSnapshotCatalog() {
         insightsButton.textContent = '생성';
         insightsMeta.textContent = '선택한 기간과 페이지 기준으로 생성합니다.';
         insightsBody.hidden = true;
-        insightsBody.innerHTML = '';
+        insightsContent.innerHTML = '';
+        insightsChat.hidden = true;
         return;
       }
 
@@ -4424,9 +4858,10 @@ function renderSnapshotCatalog() {
 
       if (insightsStatus.state === 'loading') {
         insightsButton.textContent = '생성 중';
-        insightsMeta.textContent = '모든 클릭 요소, 위치, 유지기간, GA4 데이터를 요약해 Gemini에 전달 중입니다.';
+        insightsMeta.textContent = '모든 클릭 요소, 위치, 유지기간, GA4 데이터를 압축해 Gemini 3.1 Pro에 전달 중입니다.';
         insightsBody.hidden = false;
-        insightsBody.innerHTML = '<p class="insights-status">Gemini가 인사이트를 생성하고 있습니다.</p>';
+        insightsContent.innerHTML = '<p class="insights-status">Gemini가 인사이트를 생성하고 있습니다.</p>';
+        insightsChat.hidden = true;
         return;
       }
 
@@ -4434,7 +4869,8 @@ function renderSnapshotCatalog() {
         insightsButton.textContent = '다시 시도';
         insightsMeta.textContent = insightsStatus.message;
         insightsBody.hidden = false;
-        insightsBody.innerHTML = '<p class="insights-status">' + escapeHtml(insightsStatus.detail || '오류가 발생했습니다.') + '</p>';
+        insightsContent.innerHTML = '<p class="insights-status">' + escapeHtml(insightsStatus.detail || '오류가 발생했습니다.') + '</p>';
+        insightsChat.hidden = true;
         return;
       }
 
@@ -4444,7 +4880,202 @@ function renderSnapshotCatalog() {
       const modelText = insightsStatus.model ? ' · ' + insightsStatus.model : '';
       insightsMeta.textContent = cacheText + (generated ? ' · ' + generated : '') + modelText;
       insightsBody.hidden = false;
-      insightsBody.innerHTML = renderInsightContent(insightsStatus.insight, insightsStatus.summary);
+      insightsContent.innerHTML = renderInsightContent(insightsStatus.insight, insightsStatus.summary);
+      renderFollowUpChat();
+    }
+
+    async function requestGeminiFollowUp() {
+      if (insightsStatus.state !== 'ok' || followUpState.state === 'loading') return;
+
+      const question = followUpInput.value.replace(/\\s+/g, ' ').trim();
+      if (!question) {
+        resizeFollowUpInput();
+        followUpInput.focus();
+        return;
+      }
+
+      const history = buildFollowUpHistory();
+      const messageId = Date.now() + '-' + Math.random().toString(36).slice(2);
+      const requestId = ++followUpRequestId;
+      const targetId = targetSelect.value;
+      const startDate = startDateInput.value;
+      const endDate = endDateInput.value;
+      followUpConversation.push({ id: messageId, role: 'user', content: question });
+      followUpInput.value = '';
+      followUpState = { state: 'loading', message: 'Gemini가 답변을 만들고 있습니다.' };
+      resizeFollowUpInput();
+      renderGeminiInsights();
+      scrollFollowUpToBottom();
+
+      try {
+        const response = await fetch('../api/ai-insights/follow-up', {
+          method: 'POST',
+          cache: 'no-store',
+          headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ targetId, startDate, endDate, question, history }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (requestId !== followUpRequestId) return;
+        if (!response.ok || payload.status === 'error') {
+          throw new Error(payload.error || '추가 질문에 답하지 못했습니다.');
+        }
+
+        followUpConversation.push({
+          id: messageId + '-answer',
+          role: 'assistant',
+          response: payload.response || {},
+          cached: Boolean(payload.cached),
+          model: payload.model || '',
+        });
+        followUpState = {
+          state: 'ok',
+          message: payload.cached ? '캐시된 답변입니다.' : '답변이 생성되었습니다.',
+        };
+      } catch (error) {
+        if (requestId !== followUpRequestId) return;
+        followUpConversation = followUpConversation.filter((message) => message.id !== messageId);
+        followUpInput.value = question;
+        followUpState = {
+          state: 'error',
+          message: error instanceof Error ? error.message : String(error),
+        };
+        resizeFollowUpInput();
+      }
+
+      renderGeminiInsights();
+      if (followUpState.state === 'ok') scrollLatestFollowUpAnswerIntoView();
+      else scrollFollowUpToBottom();
+    }
+
+    function buildFollowUpHistory() {
+      return followUpConversation
+        .map((message) => {
+          if (message.role === 'user') return { role: 'user', content: message.content || '' };
+          if (message.role === 'assistant') {
+            return { role: 'assistant', content: followUpResponseText(message.response) };
+          }
+          return null;
+        })
+        .filter(Boolean)
+        .slice(-8);
+    }
+
+    function followUpResponseText(response = {}) {
+      return [
+        String(response.answer || ''),
+        Array.isArray(response.evidence) && response.evidence.length
+          ? '근거: ' + response.evidence.join(' / ')
+          : '',
+        Array.isArray(response.caveats) && response.caveats.length
+          ? '주의: ' + response.caveats.join(' / ')
+          : '',
+      ].filter(Boolean).join('\\n');
+    }
+
+    function resetFollowUpConversation() {
+      followUpRequestId += 1;
+      followUpConversation = [];
+      followUpState = { state: 'idle', message: '' };
+      if (followUpInput) {
+        followUpInput.value = '';
+        resizeFollowUpInput();
+      }
+      if (followUpMessages) followUpMessages.innerHTML = '';
+      if (followUpStatus) {
+        followUpStatus.textContent = '';
+        followUpStatus.classList.remove('error');
+      }
+      if (insightsChat) insightsChat.hidden = true;
+    }
+
+    function clearFollowUpConversation() {
+      resetFollowUpConversation();
+      renderGeminiInsights();
+      followUpInput.focus();
+    }
+
+    function renderFollowUpChat() {
+      const isReady = insightsStatus.state === 'ok';
+      insightsChat.hidden = !isReady;
+      if (!isReady) return;
+
+      followUpMessages.innerHTML = followUpConversation.map(renderFollowUpMessage).join('');
+      const loading = followUpState.state === 'loading';
+      followUpInput.disabled = loading;
+      followUpClear.disabled = loading || followUpConversation.length === 0;
+      followUpStatus.textContent = followUpState.message || '';
+      followUpStatus.classList.toggle('error', followUpState.state === 'error');
+      resizeFollowUpInput();
+    }
+
+    function renderFollowUpMessage(message) {
+      if (message.role === 'user') {
+        return '<article class="chat-message user"><p>' +
+          escapeHtml(String(message.content || '')) +
+          '</p></article>';
+      }
+
+      const response = message.response || {};
+      const evidence = Array.isArray(response.evidence) ? response.evidence.filter(Boolean) : [];
+      const caveats = Array.isArray(response.caveats) ? response.caveats.filter(Boolean) : [];
+      const suggestions = Array.isArray(response.suggestedQuestions)
+        ? response.suggestedQuestions.filter(Boolean)
+        : [];
+      const metadata = [message.model, message.cached ? '캐시됨' : '새 답변'].filter(Boolean).join(' · ');
+      return [
+        '<article class="chat-message assistant">',
+        metadata ? '<small>' + escapeHtml(metadata) + '</small>' : '',
+        '<p>' + escapeHtml(String(response.answer || '답변 내용이 없습니다.')) + '</p>',
+        evidence.length
+          ? '<strong>근거</strong><ul>' +
+            evidence.map((item) => '<li>' + escapeHtml(String(item)) + '</li>').join('') +
+            '</ul>'
+          : '',
+        caveats.length
+          ? '<strong>주의사항</strong><ul>' +
+            caveats.map((item) => '<li>' + escapeHtml(String(item)) + '</li>').join('') +
+            '</ul>'
+          : '',
+        suggestions.length
+          ? '<div class="chat-suggestions">' +
+            suggestions.map((item) =>
+              '<button class="chat-suggestion" type="button" data-follow-up-question="' +
+              escapeHtml(String(item)) +
+              '">' + escapeHtml(String(item)) + '</button>',
+            ).join('') +
+            '</div>'
+          : '',
+        '</article>',
+      ].join('');
+    }
+
+    function resizeFollowUpInput() {
+      if (!followUpInput || !followUpSend) return;
+      followUpInput.style.height = 'auto';
+      followUpInput.style.height = Math.min(followUpInput.scrollHeight || 36, 108) + 'px';
+      followUpSend.disabled =
+        followUpState.state === 'loading' ||
+        insightsStatus.state !== 'ok' ||
+        !followUpInput.value.trim();
+    }
+
+    function scrollFollowUpToBottom() {
+      window.requestAnimationFrame(() => {
+        insightsBody.scrollTop = insightsBody.scrollHeight;
+      });
+    }
+
+    function scrollLatestFollowUpAnswerIntoView() {
+      window.requestAnimationFrame(() => {
+        const latestMessage = followUpMessages.lastElementChild;
+        if (!latestMessage) return;
+        const bodyRect = insightsBody.getBoundingClientRect();
+        const messageRect = latestMessage.getBoundingClientRect();
+        insightsBody.scrollTop += messageRect.top - bodyRect.top - 8;
+      });
     }
 
     function renderInsightContent(insight = {}, summary = {}) {
@@ -4458,7 +5089,10 @@ function renderSnapshotCatalog() {
         ['액션 제안', insight.actionItems],
       ];
       const summaryText = summary.elementCount
-        ? '<small>' + escapeHtml(String(summary.elementCount)) + ' elements · ' + escapeHtml(String(summary.groupCount || 0)) + ' groups</small>'
+        ? '<small>' + escapeHtml(String(summary.elementCount)) + ' elements · ' +
+          escapeHtml(String(summary.groupCount || 0)) + ' groups' +
+          (summary.analysisMode === 'chunked' ? ' · ' + escapeHtml(String(summary.chunkCount || 0)) + ' chunks' : '') +
+          '</small>'
         : '';
       return [
         '<section>',
@@ -4512,15 +5146,22 @@ function renderSnapshotCatalog() {
 
       for (const run of runs) {
         const target = getTarget(run, targetId);
+        const identityCounts = new Map();
         for (const element of target?.elements || []) {
-          const key = element.periodKey || element.stableKey || [targetId, element.ga_action, element.ga_label, element.href].join('|');
-          const metricKey = element.ga4MetricKey || ga4MetricKey(element.ga_action || '(missing)', element.ga_label || '');
+          const rawAction = element.ga_action || '(missing)';
+          const action = normalizeTrackingAction(targetId, run.date, rawAction);
+          const label = element.ga_label || '';
+          const identity = [targetId, action, label, element.href || ''].join('|');
+          const ordinal = (identityCounts.get(identity) || 0) + 1;
+          identityCounts.set(identity, ordinal);
+          const key = 'canonical:' + identity + ':' + ordinal;
+          const metricKey = ga4MetricKey(action, label);
           let record = byKey.get(key);
           if (!record) {
             record = {
               key,
-              ga_action: element.ga_action || '(missing)',
-              ga_label: element.ga_label || '',
+              ga_action: action,
+              ga_label: label,
               href: element.href || null,
               metricKey,
               occurrences: [],
@@ -4538,10 +5179,11 @@ function renderSnapshotCatalog() {
             contentPath: target.contentPath,
             snapshotId: element.snapshotId,
             periodKey: element.periodKey,
-            ga_action: element.ga_action || '(missing)',
-            ga_label: element.ga_label || '',
+            ga_action: action,
+            raw_ga_action: rawAction,
+            ga_label: label,
             href: element.href || null,
-            index: element.index || 0,
+            index: element.sourceIndex || element.index || 0,
             ga4: emptyMetrics(),
           });
         }
@@ -4561,6 +5203,9 @@ function renderSnapshotCatalog() {
         const dateCompare = right.latestOccurrence.date.localeCompare(left.latestOccurrence.date);
         if (dateCompare) return dateCompare;
         return (left.latestOccurrence.index || 0) - (right.latestOccurrence.index || 0);
+      });
+      records.forEach((record, index) => {
+        record.defaultOrder = index;
       });
 
       return records;
@@ -4595,6 +5240,9 @@ function renderSnapshotCatalog() {
         record.periods = record.periods || [];
         record.href = record.hrefs.size === 1 ? Array.from(record.hrefs)[0] : record.hrefs.size > 1 ? 'multiple' : null;
         record.currentOccurrenceCount = record.occurrences.filter((occurrence) => occurrence.runId === record.latestOccurrence?.runId).length;
+        record.observedDays = new Set(record.occurrences.map((occurrence) => occurrence.date)).size;
+        record.firstSeen = record.periods[0]?.start || '';
+        record.lastSeen = record.periods.at(-1)?.end || '';
         record.ga4 = emptyMetrics();
         return record;
       });
@@ -4647,10 +5295,19 @@ function renderSnapshotCatalog() {
         group.records.push(record);
       }
 
+      for (const group of groups) {
+        group.metrics = sumUniqueRecordMetrics(group.records);
+        group.defaultOrder = Math.min(...group.records.map((record) => record.defaultOrder || 0));
+        group.firstSeen = group.records.map((record) => record.firstSeen).filter(Boolean).sort()[0] || '';
+        group.lastSeen = group.records.map((record) => record.lastSeen).filter(Boolean).sort().at(-1) || '';
+        group.observedDays = Math.max(...group.records.map((record) => record.observedDays || 0));
+        group.records.sort(comparePeriodRecords);
+      }
+      groups.sort(comparePeriodGroups);
+
       periodRows.innerHTML = groups
         .map((group) => {
           const collapsed = collapsedGroups.has(group.id);
-          const groupMetrics = sumMetrics(group.records.map((record) => record.ga4));
           const rows = collapsed
             ? ''
             : group.records
@@ -4660,7 +5317,7 @@ function renderSnapshotCatalog() {
                   return '<tr class="item-row' + active + '" data-key="' + escapeHtml(record.key) + '" data-group-id="' + escapeHtml(group.id) + '">' +
                     '<td><code>' + escapeHtml(record.ga_action || '(missing)') + '</code></td>' +
                     '<td><code>' + escapeHtml(record.ga_label) + '</code>' + occurrenceBadge + '</td>' +
-                    '<td><span class="period">' + escapeHtml(formatPeriods(record.periods)) + '</span></td>' +
+                    '<td>' + renderPeriodCell(record) + '</td>' +
                     '<td class="metric">' + formatMetric(record.ga4.eventCount, 'eventCount') + '</td>' +
                     '<td class="metric">' + formatMetric(record.ga4.sessions, 'sessions') + '</td>' +
                     '<td class="metric">' + formatMetric(record.ga4.activeUsers, 'activeUsers') + '</td>' +
@@ -4674,9 +5331,9 @@ function renderSnapshotCatalog() {
             '<span>' + escapeHtml(group.action) + '</span>' +
             '<small>' + group.records.length + ' items</small>' +
             '</button></td>' +
-            '<td class="metric">' + formatMetric(groupMetrics.eventCount, 'eventCount') + '</td>' +
-            '<td class="metric">' + formatMetric(groupMetrics.sessions, 'sessions') + '</td>' +
-            '<td class="metric">' + formatMetric(groupMetrics.activeUsers, 'activeUsers') + '</td>' +
+            '<td class="metric">' + formatMetric(group.metrics.eventCount, 'eventCount') + '</td>' +
+            '<td class="metric">' + formatMetric(group.metrics.sessions, 'sessions') + '</td>' +
+            '<td class="metric">' + formatMetric(group.metrics.activeUsers, 'activeUsers') + '</td>' +
             '</tr>' + rows;
         })
         .join('');
@@ -4701,7 +5358,73 @@ function renderSnapshotCatalog() {
         });
       }
 
+      for (const button of periodRows.querySelectorAll('.period-button')) {
+        button.addEventListener('click', (event) => {
+          const record = recordByKey.get(button.dataset.key);
+          if (record) openPeriodPopover(record, button);
+          event.preventDefault();
+          event.stopPropagation();
+        });
+      }
+
+      updateSortHeaders();
       scheduleLayoutSync();
+    }
+
+    function renderPeriodCell(record) {
+      const latestPeriod = record.periods.at(-1);
+      const latestText = latestPeriod ? formatPeriod(latestPeriod) : '-';
+      const extraText = record.periods.length > 1 ? ' · 외 ' + (record.periods.length - 1) + '개' : '';
+      const meta = record.periods.length + '개 구간 · 총 ' + (record.observedDays || 0) + '일';
+      return '<button class="period-button" type="button" data-key="' + escapeHtml(record.key) + '" aria-label="전체 유지 기간 보기">' +
+        '<span class="period-primary">' + escapeHtml(latestText + extraText) + '</span>' +
+        '<span class="period-meta">' + escapeHtml(meta) + '</span>' +
+      '</button>';
+    }
+
+    function comparePeriodRecords(left, right) {
+      const key = sortState.key;
+      if (key === 'screen' || key === 'action') return compareDefaultOrder(left, right);
+      const result = compareSortValues(recordSortValue(left, key), recordSortValue(right, key), sortState.direction);
+      return result || compareDefaultOrder(left, right);
+    }
+
+    function comparePeriodGroups(left, right) {
+      const key = sortState.key;
+      if (key === 'screen' || key === 'label') return compareDefaultOrder(left, right);
+      const result = compareSortValues(groupSortValue(left, key), groupSortValue(right, key), sortState.direction);
+      return result || compareDefaultOrder(left, right);
+    }
+
+    function recordSortValue(record, key) {
+      if (key === 'action') return record.ga_action || '';
+      if (key === 'label') return record.ga_label || '';
+      if (key === 'firstSeen') return record.firstSeen || '';
+      if (key === 'lastSeen') return record.lastSeen || '';
+      if (key === 'observedDays') return Number(record.observedDays || 0);
+      if (['eventCount', 'sessions', 'activeUsers'].includes(key)) return Number(record.ga4?.[key] || 0);
+      return Number(record.defaultOrder || 0);
+    }
+
+    function groupSortValue(group, key) {
+      if (key === 'action') return group.action || '';
+      if (key === 'firstSeen') return group.firstSeen || '';
+      if (key === 'lastSeen') return group.lastSeen || '';
+      if (key === 'observedDays') return Number(group.observedDays || 0);
+      if (['eventCount', 'sessions', 'activeUsers'].includes(key)) return Number(group.metrics?.[key] || 0);
+      return Number(group.defaultOrder || 0);
+    }
+
+    function compareSortValues(left, right, direction) {
+      const multiplier = direction === 'desc' ? -1 : 1;
+      if (typeof left === 'number' || typeof right === 'number') {
+        return (Number(left || 0) - Number(right || 0)) * multiplier;
+      }
+      return String(left || '').localeCompare(String(right || ''), 'ko-KR', { numeric: true }) * multiplier;
+    }
+
+    function compareDefaultOrder(left, right) {
+      return Number(left.defaultOrder || 0) - Number(right.defaultOrder || 0);
     }
 
     function renderStatusRow(message) {
@@ -4716,6 +5439,96 @@ function renderSnapshotCatalog() {
         '<td class="metric">' + formatMetric(ga4Status.totals.sessions, 'sessions') + '</td>' +
         '<td class="metric">' + formatMetric(ga4Status.totals.activeUsers, 'activeUsers') + '</td>' +
       '</tr>';
+    }
+
+    function setSortState(nextState) {
+      const next = normalizeSortState(nextState);
+      const previousScrollTop = tableWrap.scrollTop;
+      const previousScrollLeft = tableWrap.scrollLeft;
+      sortState = next;
+      sortSelect.value = sortValue(sortState);
+      closePeriodPopover();
+      renderPeriodRows();
+      tableWrap.scrollTop = previousScrollTop;
+      tableWrap.scrollLeft = previousScrollLeft;
+      updateHash();
+    }
+
+    function parseSortValue(value) {
+      const [key = 'screen', direction = 'asc'] = String(value || '').split(':');
+      return normalizeSortState({ key, direction });
+    }
+
+    function normalizeSortState(value) {
+      const allowedKeys = new Set([
+        'screen',
+        'action',
+        'label',
+        'firstSeen',
+        'lastSeen',
+        'observedDays',
+        'eventCount',
+        'sessions',
+        'activeUsers',
+      ]);
+      const key = allowedKeys.has(value?.key) ? value.key : 'screen';
+      const direction = value?.direction === 'desc' ? 'desc' : 'asc';
+      return { key, direction };
+    }
+
+    function sortValue(value) {
+      return (value?.key || 'screen') + ':' + (value?.direction === 'desc' ? 'desc' : 'asc');
+    }
+
+    function updateSortHeaders() {
+      for (const header of document.querySelectorAll('th[data-sort-key]')) {
+        const active = header.dataset.sortKey === sortState.key;
+        header.setAttribute('aria-sort', active ? sortState.direction === 'desc' ? 'descending' : 'ascending' : 'none');
+        const indicator = header.querySelector('.sort-indicator');
+        if (indicator) indicator.textContent = active ? sortState.direction === 'desc' ? '▼' : '▲' : '';
+      }
+    }
+
+    function openPeriodPopover(record, anchor) {
+      activePeriodRecordKey = record.key;
+      activePeriodAnchor = anchor;
+      periodPopoverSummary.textContent = record.periods.length + '개 구간 · 총 ' + (record.observedDays || 0) + '일';
+      periodPopoverList.innerHTML = record.periods
+        .map((period) => '<li>' + escapeHtml(formatPeriod(period)) + '</li>')
+        .join('');
+      periodPopover.hidden = false;
+      periodPopover.style.visibility = 'hidden';
+      window.requestAnimationFrame(() => positionPeriodPopover(anchor));
+    }
+
+    function positionPeriodPopover(anchor) {
+      if (periodPopover.hidden || !anchor?.isConnected) {
+        closePeriodPopover();
+        return;
+      }
+
+      const margin = 12;
+      const gap = 8;
+      const anchorRect = anchor.getBoundingClientRect();
+      const popoverRect = periodPopover.getBoundingClientRect();
+      const maxLeft = Math.max(margin, window.innerWidth - popoverRect.width - margin);
+      const left = Math.max(margin, Math.min(maxLeft, anchorRect.left));
+      const below = anchorRect.bottom + gap;
+      const above = anchorRect.top - popoverRect.height - gap;
+      const preferredTop = below + popoverRect.height <= window.innerHeight - margin ? below : above;
+      const maxTop = Math.max(margin, window.innerHeight - popoverRect.height - margin);
+      const top = Math.max(margin, Math.min(maxTop, preferredTop));
+
+      periodPopover.style.left = left + 'px';
+      periodPopover.style.top = top + 'px';
+      periodPopover.style.visibility = 'visible';
+    }
+
+    function closePeriodPopover() {
+      activePeriodRecordKey = null;
+      activePeriodAnchor = null;
+      periodPopover.hidden = true;
+      periodPopover.style.visibility = '';
     }
 
     function hasSelectedText() {
@@ -5044,7 +5857,8 @@ function renderSnapshotCatalog() {
       const labelElement = target.closest('[ga_label]');
       if (!labelElement) return null;
       const gaLabel = labelElement.getAttribute('ga_label') || '';
-      const gaAction = labelElement.closest('[ga_action]')?.getAttribute('ga_action') || null;
+      const rawGaAction = labelElement.closest('[ga_action]')?.getAttribute('ga_action') || null;
+      const gaAction = normalizeTrackingAction(currentTarget.id, currentRun.date, rawGaAction);
       const anchor = labelElement.closest('a[href]');
       const href = anchor?.href || null;
 
@@ -5117,7 +5931,10 @@ function renderSnapshotCatalog() {
         (element) => element.getAttribute('ga_label') === occurrence.ga_label,
       );
       const actionMatches = candidates.filter(
-        (element) => (element.closest('[ga_action]')?.getAttribute('ga_action') || null) === occurrence.ga_action,
+        (element) => {
+          const rawAction = element.closest('[ga_action]')?.getAttribute('ga_action') || null;
+          return normalizeTrackingAction(occurrence.targetId, occurrence.date, rawAction) === occurrence.ga_action;
+        },
       );
       const hrefMatches = actionMatches.filter((element) => {
         const anchor = element.closest('a[href]');
@@ -5433,7 +6250,11 @@ function renderSnapshotCatalog() {
     }
 
     function formatPeriods(periods) {
-      return periods.map((period) => period.start + ' ~ ' + period.end).join(', ');
+      return periods.map(formatPeriod).join(', ');
+    }
+
+    function formatPeriod(period) {
+      return period.start + ' ~ ' + period.end;
     }
 
     function ga4MetricKey(action, label) {
@@ -5450,6 +6271,28 @@ function renderSnapshotCatalog() {
         sessions: total.sessions + Number(item?.sessions || 0),
         activeUsers: total.activeUsers + Number(item?.activeUsers || 0),
       }), emptyMetrics());
+    }
+
+    function sumUniqueRecordMetrics(records) {
+      const seen = new Set();
+      const metrics = [];
+      for (const record of records) {
+        if (seen.has(record.metricKey)) continue;
+        seen.add(record.metricKey);
+        metrics.push(record.ga4);
+      }
+      return sumMetrics(metrics);
+    }
+
+    function normalizeTrackingAction(targetId, date, action) {
+      const rawAction = action || '(missing)';
+      const correction = TRACKING_CORRECTIONS.find((rule) => {
+        return rule.targetId === targetId &&
+          rule.rawAction === rawAction &&
+          date >= rule.startDate &&
+          date <= rule.endDate;
+      });
+      return correction?.canonicalAction || rawAction;
     }
 
     function formatMetric(value, metricName) {
@@ -5482,6 +6325,7 @@ function renderSnapshotCatalog() {
       params.set('target', targetSelect.value || '');
       params.set('start', startDateInput.value || '');
       params.set('end', endDateInput.value || '');
+      params.set('sort', sortValue(sortState));
       location.hash = params.toString();
     }
 
@@ -5491,6 +6335,7 @@ function renderSnapshotCatalog() {
         target: params.get('target') || '',
         start: params.get('start') || '',
         end: params.get('end') || '',
+        sort: params.get('sort') || 'screen:asc',
       };
     }
 
@@ -5553,6 +6398,13 @@ function makePeriodKey(targetId, element) {
 
 function hashStringNode(value) {
   return `h${crypto.createHash('sha1').update(String(value)).digest('hex').slice(0, 12)}`;
+}
+
+function jsonForInlineScript(value) {
+  return JSON.stringify(value)
+    .replaceAll('<', '\\u003c')
+    .replaceAll('>', '\\u003e')
+    .replaceAll('&', '\\u0026');
 }
 
 function toCsv(elements) {

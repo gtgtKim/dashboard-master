@@ -3,8 +3,10 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { makeGa4MetricKey, queryGa4Metrics } from './ga4-data-api.mjs';
+import { canonicalTrackingBase } from './skt-tracking-normalization.mjs';
 
 const SNAPSHOTS_ROOT = path.resolve('snapshots');
+const INPUT_SCHEMA_VERSION = 'compact-observations-v2';
 const PROMPT_INSTRUCTIONS = Object.freeze([
   '너는 GA4와 이커머스/통신 상품 UX를 함께 보는 한국어 데이터 분석가다.',
   '분석 대상은 SKT의 T world Shop 한국 메인페이지이며, PC는 shop.tworld.co.kr/shop/main, MO는 m.shop.tworld.co.kr/shop/main 데이터다.',
@@ -16,8 +18,20 @@ const PROMPT_INSTRUCTIONS = Object.freeze([
   'rolling 배너나 carousel 요소는 offscreen으로 캡처될 수 있다. offscreen/hidden/inViewport 값만 보고 실제 사용자 노출 여부나 스와이프 행동을 단정하지 말고 해석 주의사항으로 다뤄라.',
   '오늘 날짜가 포함된 조회는 GA4 데이터가 지연될 수 있다. 수치가 낮거나 불완전해 보이면 확정 데이터 여부를 주의사항으로 남겨라.',
   '액션 제안은 배치 변경을 단정적으로 권하지 말고, 태깅 점검, 소재 비교, 영역별 클릭 비중 확인, 추가 분석 가설 중심으로 작성해라.',
-  '모든 클릭 요소와 위치/유지기간/GA4 수치를 고려하되, 각 섹션에는 가능한 한 구체적인 수치를 포함해라.',
+  'elements에는 모든 표 행이 들어 있고 observations.instances에는 같은 행으로 병합된 실제 클릭 요소별 관찰 정보가 압축되어 있다. 모든 클릭 요소와 위치/유지기간/GA4 수치를 빠짐없이 고려해라.',
+  'observations의 위치 범위와 materialChanges는 날짜별 중복 좌표를 압축한 값이다. 값이 없다는 이유로 변화가 없었다고 단정하지 마라.',
+  '각 섹션에는 가능한 한 구체적인 수치를 포함해라.',
   '반드시 JSON만 출력해라. 마크다운 코드블록은 쓰지 마라.',
+]);
+const CHUNK_PROMPT_INSTRUCTIONS = Object.freeze([
+  '아래 데이터는 전체 SKT T world Shop 분석 데이터를 토큰 한도에 맞춰 나눈 일부다.',
+  '제공된 모든 클릭 요소와 실제 요소 인스턴스를 검토하고, 이 조각에서 확인되는 사실만 JSON으로 정리해라.',
+  '다른 조각의 데이터는 추측하지 마라. 최종 통합 분석기가 여러 조각의 결과를 합칠 것이다.',
+]);
+const SYNTHESIS_PROMPT_INSTRUCTIONS = Object.freeze([
+  '아래 JSON에는 같은 조회의 전체 영역 합계와 모든 데이터 조각의 분석 결과가 들어 있다.',
+  '모든 조각을 빠짐없이 통합하고 중복되는 관찰은 합쳐 최종 SKT T world Shop 인사이트를 작성해라.',
+  '조각별 표현을 그대로 나열하지 말고 전체 페이지 관점에서 영역과 수치를 비교해라.',
 ]);
 const PROMPT_OUTPUT_SCHEMA = Object.freeze({
   headline: '한 문장 핵심 결론',
@@ -29,20 +43,83 @@ const PROMPT_OUTPUT_SCHEMA = Object.freeze({
   watchouts: ['데이터 해석 주의사항 2~4개'],
   actionItems: ['확인 또는 실행 제안 3~5개'],
 });
+const FOLLOW_UP_INSTRUCTIONS = Object.freeze([
+  '너는 SKT T world Shop 메인페이지 대시보드의 후속 질문에 답하는 한국어 데이터 분석가다.',
+  'analysis가 원본 근거이고 originalInsight는 앞서 생성한 요약이다. 두 값이 충돌하면 analysis를 우선해라.',
+  '질문에 직접 답하고, 관련 ga_action/ga_label, GA4 수치, 유지기간, 요소 위치를 가능한 한 구체적으로 제시해라.',
+  '유지기간은 조회 기간 안에서 관찰된 구간일 뿐 실제 서비스의 최초 또는 최종 노출일이 아님을 지켜라.',
+  '캐러셀의 hidden/offscreen/inViewport 값만으로 실제 노출이나 스와이프 행동을 단정하지 마라.',
+  '데이터에 없는 전환, 매출, 구매 의도, 선호도, 원인을 추측하지 마라.',
+  '질문에 답할 근거가 없으면 확인할 수 없다고 명확히 말해라.',
+  '답변은 간결한 한국어로 쓰고 반드시 JSON만 출력해라. 마크다운 코드블록은 쓰지 마라.',
+]);
+const FOLLOW_UP_CHUNK_INSTRUCTIONS = Object.freeze([
+  '아래 데이터는 전체 클릭 요소 중 일부다.',
+  '질문과 직접 관련된 근거를 이 조각에서 모두 찾아라. 관련 근거가 없으면 answer를 빈 문자열로 두고 relevance를 false로 설정해라.',
+  '다른 데이터 조각은 추측하지 마라. 이후 통합 단계에서 모든 조각의 답변을 합친다.',
+]);
+const FOLLOW_UP_SYNTHESIS_INSTRUCTIONS = Object.freeze([
+  '아래 JSON에는 같은 질문에 대한 모든 데이터 조각의 검토 결과가 들어 있다.',
+  '관련 있는 모든 조각의 근거를 합치고 중복을 제거해 하나의 최종 답변을 작성해라.',
+  '조각 번호나 분할 처리 사실은 사용자 답변에 언급하지 마라.',
+]);
+const FOLLOW_UP_OUTPUT_SCHEMA = Object.freeze({
+  answer: '질문에 대한 직접적인 한국어 답변',
+  evidence: ['답변을 뒷받침하는 구체적인 요소/수치/기간 근거 0~6개'],
+  caveats: ['해석 시 주의할 점 0~3개'],
+  suggestedQuestions: ['현재 데이터로 이어서 물어볼 만한 짧은 질문 0~3개'],
+});
+const FOLLOW_UP_CHUNK_OUTPUT_SCHEMA = Object.freeze({
+  relevance: '질문과 관련된 근거가 있으면 true, 없으면 false',
+  answer: '이 데이터 조각에서 확인되는 질문 관련 답변',
+  evidence: ['구체적인 요소/수치/기간 근거'],
+  caveats: ['해석 시 주의할 점'],
+});
 const PROMPT_VERSION = crypto
   .createHash('sha1')
-  .update(JSON.stringify({ instructions: PROMPT_INSTRUCTIONS, outputSchema: PROMPT_OUTPUT_SCHEMA }))
+  .update(
+    JSON.stringify({
+      inputSchema: INPUT_SCHEMA_VERSION,
+      instructions: PROMPT_INSTRUCTIONS,
+      chunkInstructions: CHUNK_PROMPT_INSTRUCTIONS,
+      synthesisInstructions: SYNTHESIS_PROMPT_INSTRUCTIONS,
+      outputSchema: PROMPT_OUTPUT_SCHEMA,
+    }),
+  )
   .digest('hex')
   .slice(0, 12);
-const CACHE_VERSION = `v1:${PROMPT_VERSION}`;
+const FOLLOW_UP_VERSION = crypto
+  .createHash('sha1')
+  .update(
+    JSON.stringify({
+      instructions: FOLLOW_UP_INSTRUCTIONS,
+      chunkInstructions: FOLLOW_UP_CHUNK_INSTRUCTIONS,
+      synthesisInstructions: FOLLOW_UP_SYNTHESIS_INSTRUCTIONS,
+      outputSchema: FOLLOW_UP_OUTPUT_SCHEMA,
+      chunkOutputSchema: FOLLOW_UP_CHUNK_OUTPUT_SCHEMA,
+    }),
+  )
+  .digest('hex')
+  .slice(0, 12);
 const INSIGHTS_CACHE_DIR = path.join(SNAPSHOTS_ROOT, 'ai-insights');
+const FOLLOW_UP_CACHE_DIR = path.join(SNAPSHOTS_ROOT, 'ai-follow-ups');
 const GEMINI_PROJECT = process.env.GEMINI_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID || 'gyutae-test-project';
 const GEMINI_LOCATION = process.env.GEMINI_LOCATION || process.env.GOOGLE_CLOUD_LOCATION || 'global';
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3-flash-preview';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.1-pro-preview';
 const GEMINI_APPLICATION_CREDENTIALS = process.env.GEMINI_APPLICATION_CREDENTIALS || process.env.GEMINI_GOOGLE_APPLICATION_CREDENTIALS || '';
-const MAX_OUTPUT_TOKENS = positiveInteger(process.env.GEMINI_INSIGHTS_MAX_OUTPUT_TOKENS, 8192);
+const MAX_OUTPUT_TOKENS = positiveInteger(process.env.GEMINI_INSIGHTS_MAX_OUTPUT_TOKENS, 16_384);
+const MAX_INPUT_TOKENS = positiveInteger(process.env.GEMINI_INSIGHTS_MAX_INPUT_TOKENS, 400_000);
+const CHUNK_INPUT_TOKENS = Math.min(
+  MAX_INPUT_TOKENS,
+  positiveInteger(process.env.GEMINI_INSIGHTS_CHUNK_INPUT_TOKENS, 240_000),
+);
 const GEMINI_RETRY_ATTEMPTS = positiveInteger(process.env.GEMINI_INSIGHTS_RETRY_ATTEMPTS, 3);
 const GEMINI_RETRY_DELAY_MS = positiveInteger(process.env.GEMINI_INSIGHTS_RETRY_DELAY_MS, 12_000);
+const CACHE_VERSION = `v2:${GEMINI_MODEL}:${INPUT_SCHEMA_VERSION}:${PROMPT_VERSION}`;
+const FOLLOW_UP_CACHE_VERSION = `v1:${GEMINI_MODEL}:${INPUT_SCHEMA_VERSION}:${FOLLOW_UP_VERSION}`;
+const MAX_FOLLOW_UP_QUESTION_LENGTH = 1_000;
+const MAX_FOLLOW_UP_HISTORY_MESSAGES = 8;
+const MAX_FOLLOW_UP_HISTORY_CONTENT_LENGTH = 3_000;
 
 export async function queryAiInsights({ targetId, startDate, endDate }) {
   validateDate(startDate, 'startDate');
@@ -55,7 +132,7 @@ export async function queryAiInsights({ targetId, startDate, endDate }) {
   if (cached) return { ...cached, cached: true };
 
   const analysis = await buildInsightInput({ targetId, startDate, endDate });
-  const insight = await generateGeminiInsight(analysis);
+  const generation = await generateGeminiInsight(analysis);
   const payload = {
     status: 'ok',
     cached: false,
@@ -67,12 +144,80 @@ export async function queryAiInsights({ targetId, startDate, endDate }) {
     targetId,
     startDate,
     endDate,
-    summary: summarizeAnalysisForResponse(analysis),
-    insight,
+    summary: {
+      ...summarizeAnalysisForResponse(analysis),
+      analysisMode: generation.mode,
+      inputTokens: generation.inputTokens,
+      chunkCount: generation.chunkCount,
+    },
+    insight: generation.insight,
   };
 
   await fs.mkdir(path.dirname(cachePath), { recursive: true });
-  await fs.writeFile(cachePath, `${JSON.stringify(payload, null, 2)}\n`);
+  await Promise.all([
+    fs.writeFile(cachePath, `${JSON.stringify(payload, null, 2)}\n`),
+    fs.writeFile(getInsightAnalysisPath(cachePath), `${JSON.stringify(analysis)}\n`),
+  ]);
+  return payload;
+}
+
+export async function queryAiFollowUp({ targetId, startDate, endDate, question, history = [] }) {
+  validateDate(startDate, 'startDate');
+  validateDate(endDate, 'endDate');
+  if (!targetId) throw new Error('targetId is required.');
+  if (startDate > endDate) throw new Error('startDate must be earlier than or equal to endDate.');
+
+  const normalizedQuestion = normalizeFollowUpQuestion(question);
+  const normalizedHistory = normalizeFollowUpHistory(history);
+  const followUpCachePath = getFollowUpCachePath({
+    targetId,
+    startDate,
+    endDate,
+    question: normalizedQuestion,
+    history: normalizedHistory,
+  });
+  const cached = await readJsonFile(followUpCachePath);
+  if (cached) return { ...cached, cached: true };
+
+  const originalInsight = await queryAiInsights({ targetId, startDate, endDate });
+  const insightCachePath = getInsightCachePath({ targetId, startDate, endDate });
+  const analysisPath = getInsightAnalysisPath(insightCachePath);
+  let analysis = await readJsonFile(analysisPath);
+  if (!analysis) {
+    analysis = await buildInsightInput({ targetId, startDate, endDate });
+    await fs.mkdir(path.dirname(analysisPath), { recursive: true });
+    await fs.writeFile(analysisPath, `${JSON.stringify(analysis)}\n`);
+  }
+
+  const ai = await createGeminiClient();
+  const generation = await generateGeminiFollowUp(ai, {
+    analysis,
+    originalInsight: {
+      summary: originalInsight.summary || {},
+      insight: originalInsight.insight || {},
+    },
+    question: normalizedQuestion,
+    history: normalizedHistory,
+  });
+  const payload = {
+    status: 'ok',
+    cached: false,
+    cacheVersion: FOLLOW_UP_CACHE_VERSION,
+    generatedAt: new Date().toISOString(),
+    provider: 'vertex-ai',
+    model: GEMINI_MODEL,
+    targetId,
+    startDate,
+    endDate,
+    question: normalizedQuestion,
+    mode: generation.mode,
+    inputTokens: generation.inputTokens,
+    chunkCount: generation.chunkCount,
+    response: generation.response,
+  };
+
+  await fs.mkdir(path.dirname(followUpCachePath), { recursive: true });
+  await fs.writeFile(followUpCachePath, `${JSON.stringify(payload, null, 2)}\n`);
   return payload;
 }
 
@@ -103,13 +248,13 @@ async function buildInsightInput({ targetId, startDate, endDate }) {
       periodRule:
         '유지기간은 데이터 조회 기간 안에서 같은 ga_action/ga_label 조합이 발견되어 유지된 날짜 구간이며 YYYY-MM-DD ~ YYYY-MM-DD 형식입니다. 예를 들어 2026-06-29 ~ 2026-06-29는 선택한 데이터 조회 기간 안에서 그 요소가 2026-06-29에만 관찰되었다는 뜻이지, 실제 서비스에서 그 요소가 2026-06-29에 처음 노출되었다는 뜻이 아닙니다.',
       rowRule:
-        '표의 행은 같은 ga_action/ga_label 조합과 유지기간을 가진 요소를 병합할 수 있으며, occurrences에는 해당 요소의 실제 발견 위치가 들어갑니다.',
+        '표의 행은 같은 ga_action/ga_label 조합과 유지기간을 가진 요소를 병합할 수 있으며, observations.instances에는 병합된 실제 요소별 관찰 기간과 위치가 들어갑니다.',
       previewRule:
         '기본 왼쪽 화면은 선택 기간 안의 최신 캡처본입니다. 최신 캡처본에 없는 요소를 선택하면 그 요소가 존재하던 기간의 최신 캡처본을 보여줍니다.',
       metricsRule:
         'GA4 eventCount/session/user는 선택 기간과 페이지 기준으로 조회합니다. eventName=click, PC는 event_category=TWD_main, MO는 event_category=MTWD_main 및 hostName=m.shop.tworld.co.kr 조건입니다.',
       aiRule:
-        'AI는 제공된 JSON에 있는 숫자와 위치 정보만 근거로 분석해야 하며, 데이터에 없는 사실을 추측하면 안 됩니다.',
+        'AI는 제공된 JSON에 있는 숫자와 위치 정보만 근거로 분석해야 하며, 날짜별 중복 관찰은 요소별 기간과 위치 범위 및 중요한 변경점으로 압축됩니다.',
     },
     page: {
       site: 'tworld-shop',
@@ -122,9 +267,8 @@ async function buildInsightInput({ targetId, startDate, endDate }) {
       targetLabel: latestTarget?.label || targetId,
       period: `${startDate} ~ ${endDate}`,
       days: selectedRuns.length,
-      dates: selectedRuns.map((run) => run.date),
+      firstSnapshotDate: selectedRuns[0]?.date || '',
       latestSnapshotDate: latestRun?.date || '',
-      latestRunId: latestRun?.runId || '',
       viewport: latestTarget?.page || {},
     },
     ga4: {
@@ -150,11 +294,21 @@ async function buildElementRecords(runs, targetId, ga4) {
     if (!target) continue;
     const elements = await readTargetDomElements(target);
     const page = target.page || {};
+    const identityCounts = new Map();
 
     for (const element of elements) {
-      const action = element.ga_action || '(missing)';
-      const label = element.ga_label || '';
-      const key = element.periodKey || element.stableKey || [targetId, action, label, element.href].join('|');
+      const canonical = canonicalTrackingBase({
+        targetId,
+        date: run.date,
+        action: element.ga_action,
+        label: element.ga_label,
+        href: element.href,
+      });
+      const action = canonical.action;
+      const label = canonical.label;
+      const ordinal = (identityCounts.get(canonical.identity) || 0) + 1;
+      identityCounts.set(canonical.identity, ordinal);
+      const key = `${canonical.identity}|${ordinal}`;
       const metricKey = makeGa4MetricKey(action, label);
       let record = recordsByKey.get(key);
 
@@ -164,20 +318,19 @@ async function buildElementRecords(runs, targetId, ga4) {
           metricKey,
           tracking: { action, label },
           href: element.href || '',
+          rawActions: new Set(),
           occurrences: [],
         };
         recordsByKey.set(key, record);
       }
 
+      record.rawActions.add(canonical.rawAction);
       record.occurrences.push({
         date: run.date,
-        runId: run.runId,
-        snapshotId: element.snapshotId || '',
+        instanceKey: key,
         sourceIndex: element.sourceIndex || element.index || 0,
         text: cleanText(element.text || ''),
-        href: element.href || '',
         tag: element.clickableTag || element.labelTag || '',
-        selector: shortSelector(element.clickableSelector || element.selector || ''),
         status: element.status || '',
         visible: Boolean(element.visible),
         inViewport: Boolean(element.inViewport),
@@ -204,6 +357,7 @@ async function buildElementRecords(runs, targetId, ga4) {
         metricKey: record.metricKey,
         tracking: { ...record.tracking },
         hrefs: new Set(),
+        rawActions: new Set(),
         occurrences: [],
         periods: record.periods,
         periodText: record.periodText,
@@ -211,6 +365,7 @@ async function buildElementRecords(runs, targetId, ga4) {
       mergedByKey.set(mergeKey, merged);
     }
     if (record.href) merged.hrefs.add(record.href);
+    for (const rawAction of record.rawActions) merged.rawActions.add(rawAction);
     merged.occurrences.push(...record.occurrences);
   }
 
@@ -218,11 +373,16 @@ async function buildElementRecords(runs, targetId, ga4) {
   for (const record of records) {
     record.occurrences.sort(compareOccurrences);
     record.latestOccurrence = latestOccurrence(record.occurrences);
-    record.currentOccurrenceCount = record.occurrences.filter((item) => item.runId === record.latestOccurrence?.runId).length;
+    record.currentOccurrenceCount = record.occurrences.filter((item) => item.date === record.latestOccurrence?.date).length;
     record.href = record.hrefs.size === 1 ? Array.from(record.hrefs)[0] : record.hrefs.size > 1 ? 'multiple' : '';
     record.metrics = metricsForRecord(record, ga4);
     record.ux = summarizeRecordUx(record);
+    record.observations = summarizeOccurrences(record.occurrences);
+    record.correctedRawActions = Array.from(record.rawActions)
+      .filter((action) => action !== record.tracking.action)
+      .sort();
     delete record.hrefs;
+    delete record.rawActions;
   }
 
   records.sort((left, right) => {
@@ -233,7 +393,10 @@ async function buildElementRecords(runs, targetId, ga4) {
     return Number(left.latestOccurrence?.sourceIndex || 0) - Number(right.latestOccurrence?.sourceIndex || 0);
   });
 
-  return records;
+  return records.map((record) => {
+    const { key, occurrences, latestOccurrence, currentOccurrenceCount, ...insightRecord } = record;
+    return insightRecord;
+  });
 }
 
 async function readTargetDomElements(target) {
@@ -289,28 +452,238 @@ function buildGroups(records, ga4) {
 }
 
 async function generateGeminiInsight(analysis) {
+  const ai = await createGeminiClient();
+  const prompt = buildPrompt(analysis);
+  const promptTokens = await countPromptTokens(ai, prompt);
+  if (promptTokens <= MAX_INPUT_TOKENS) {
+    return {
+      insight: await generatePromptInsight(ai, prompt),
+      mode: 'single',
+      inputTokens: promptTokens,
+      chunkCount: 1,
+    };
+  }
+
+  return generateChunkedGeminiInsight(ai, analysis);
+}
+
+async function createGeminiClient() {
   const geminiCredentialFile = await findGeminiCredentialFile();
-  const ai = new GoogleGenAI({
+  return new GoogleGenAI({
     vertexai: true,
     project: GEMINI_PROJECT,
     location: GEMINI_LOCATION,
     ...(geminiCredentialFile ? { googleAuthOptions: { keyFilename: geminiCredentialFile } } : {}),
   });
+}
+
+async function generateChunkedGeminiInsight(ai, analysis) {
+  const chunks = await splitElementsToFit(ai, analysis, analysis.elements);
+  const chunkResults = [];
+  let inputTokens = 0;
+
+  for (const [index, elements] of chunks.entries()) {
+    const chunkAnalysis = analysisForElements(analysis, elements, {
+      index: index + 1,
+      count: chunks.length,
+    });
+    const prompt = buildChunkPrompt(chunkAnalysis);
+    const tokenCount = await countPromptTokens(ai, prompt);
+    inputTokens += tokenCount;
+    chunkResults.push({
+      index: index + 1,
+      elementCount: elements.length,
+      actions: Array.from(new Set(elements.map((record) => record.tracking.action))),
+      insight: await generatePromptInsight(ai, prompt),
+    });
+  }
+
+  const synthesisData = {
+    dashboardLogic: analysis.dashboardLogic,
+    page: analysis.page,
+    ga4: analysis.ga4,
+    groups: analysis.groups,
+    coveredElementCount: analysis.elements.length,
+    chunkCount: chunkResults.length,
+    chunkResults,
+  };
+  const synthesisPrompt = buildSynthesisPrompt(synthesisData);
+  const synthesisTokens = await countPromptTokens(ai, synthesisPrompt);
+  if (synthesisTokens > MAX_INPUT_TOKENS) {
+    throw new Error('Gemini 분할 분석 결과도 입력 한도를 초과했습니다. 조회 기간을 나누어 분석해 주세요.');
+  }
+
+  inputTokens += synthesisTokens;
+  return {
+    insight: await generatePromptInsight(ai, synthesisPrompt),
+    mode: 'chunked',
+    inputTokens,
+    chunkCount: chunks.length,
+  };
+}
+
+async function generateGeminiFollowUp(ai, context) {
+  const prompt = buildFollowUpPrompt(context);
+  const promptTokens = await countPromptTokens(ai, prompt);
+  if (promptTokens <= MAX_INPUT_TOKENS) {
+    return {
+      response: await generatePromptFollowUp(ai, prompt),
+      mode: 'single',
+      inputTokens: promptTokens,
+      chunkCount: 1,
+    };
+  }
+
+  const chunks = await splitFollowUpElementsToFit(ai, context, context.analysis.elements);
+  const chunkResults = [];
+  let inputTokens = 0;
+
+  for (const [index, elements] of chunks.entries()) {
+    const chunkContext = followUpContextForElements(context, elements, {
+      index: index + 1,
+      count: chunks.length,
+    });
+    const chunkPrompt = buildFollowUpChunkPrompt(chunkContext);
+    const tokenCount = await countPromptTokens(ai, chunkPrompt);
+    inputTokens += tokenCount;
+    chunkResults.push({
+      index: index + 1,
+      actions: Array.from(new Set(elements.map((record) => record.tracking.action))),
+      elementCount: elements.length,
+      response: await generatePromptFollowUpChunk(ai, chunkPrompt),
+    });
+  }
+
+  const synthesisData = {
+    question: context.question,
+    history: context.history,
+    originalInsight: context.originalInsight,
+    page: context.analysis.page,
+    ga4: context.analysis.ga4,
+    groups: context.analysis.groups,
+    coveredElementCount: context.analysis.elements.length,
+    chunkCount: chunkResults.length,
+    chunkResults,
+  };
+  const synthesisPrompt = buildFollowUpSynthesisPrompt(synthesisData);
+  const synthesisTokens = await countPromptTokens(ai, synthesisPrompt);
+  if (synthesisTokens > MAX_INPUT_TOKENS) {
+    throw new Error('후속 질문의 분할 분석 결과가 입력 한도를 초과했습니다. 질문 범위를 조금 더 구체적으로 작성해 주세요.');
+  }
+
+  inputTokens += synthesisTokens;
+  return {
+    response: await generatePromptFollowUp(ai, synthesisPrompt),
+    mode: 'chunked',
+    inputTokens,
+    chunkCount: chunks.length,
+  };
+}
+
+async function splitFollowUpElementsToFit(ai, context, elements, tokenBudget = CHUNK_INPUT_TOKENS) {
+  const prompt = buildFollowUpChunkPrompt(followUpContextForElements(context, elements, { index: 1, count: 1 }));
+  const tokenCount = await countPromptTokens(ai, prompt);
+  if (tokenCount <= tokenBudget) return [elements];
+  if (elements.length <= 1) {
+    throw new Error('단일 클릭 요소의 후속 질문 입력이 허용 크기를 초과했습니다.');
+  }
+
+  const midpoint = Math.ceil(elements.length / 2);
+  const left = await splitFollowUpElementsToFit(ai, context, elements.slice(0, midpoint), tokenBudget);
+  const right = await splitFollowUpElementsToFit(ai, context, elements.slice(midpoint), tokenBudget);
+  return [...left, ...right];
+}
+
+function followUpContextForElements(context, elements, chunk) {
+  return {
+    question: context.question,
+    history: context.history,
+    originalInsight: context.originalInsight,
+    analysis: analysisForElements(context.analysis, elements, chunk),
+  };
+}
+
+export async function splitElementsToFit(ai, analysis, elements, tokenBudget = CHUNK_INPUT_TOKENS) {
+  const prompt = buildChunkPrompt(analysisForElements(analysis, elements, { index: 1, count: 1 }));
+  const tokenCount = await countPromptTokens(ai, prompt);
+  if (tokenCount <= tokenBudget) return [elements];
+  if (elements.length <= 1) {
+    throw new Error('단일 클릭 요소의 Gemini 입력이 허용 크기를 초과했습니다.');
+  }
+
+  const midpoint = Math.ceil(elements.length / 2);
+  const left = await splitElementsToFit(ai, analysis, elements.slice(0, midpoint), tokenBudget);
+  const right = await splitElementsToFit(ai, analysis, elements.slice(midpoint), tokenBudget);
+  return [...left, ...right];
+}
+
+function analysisForElements(analysis, elements, chunk) {
+  return {
+    dashboardLogic: analysis.dashboardLogic,
+    page: analysis.page,
+    ga4: analysis.ga4,
+    groups: buildGroups(elements),
+    chunk: {
+      ...chunk,
+      elementCount: elements.length,
+      totalElementCount: analysis.elements.length,
+    },
+    elements,
+  };
+}
+
+async function generatePromptInsight(ai, prompt) {
+  return generatePromptJson(ai, prompt, parseGeminiJson);
+}
+
+async function generatePromptFollowUp(ai, prompt) {
+  return generatePromptJson(ai, prompt, parseFollowUpJson);
+}
+
+async function generatePromptFollowUpChunk(ai, prompt) {
+  return generatePromptJson(ai, prompt, parseFollowUpChunkJson);
+}
+
+async function generatePromptJson(ai, prompt, parser) {
   const response = await generateGeminiContentWithRetry(ai, {
     model: GEMINI_MODEL,
-    contents: [
-      {
-        role: 'user',
-        parts: [{ text: buildPrompt(analysis) }],
-      },
-    ],
+    contents: promptContents(prompt),
     config: {
-      temperature: 0.25,
+      temperature: 0.2,
       maxOutputTokens: MAX_OUTPUT_TOKENS,
       responseMimeType: 'application/json',
+      thinkingConfig: { thinkingLevel: 'HIGH' },
     },
   });
-  return parseGeminiJson(response.text || '');
+  return parser(response.text || '');
+}
+
+async function countPromptTokens(ai, prompt) {
+  try {
+    const response = await ai.models.countTokens({
+      model: GEMINI_MODEL,
+      contents: promptContents(prompt),
+    });
+    const totalTokens = Number(response.totalTokens || 0);
+    if (Number.isFinite(totalTokens) && totalTokens > 0) return totalTokens;
+  } catch {
+    // A conservative local estimate still lets oversized prompts use the chunked path.
+  }
+
+  return estimatePromptTokens(prompt);
+}
+
+function promptContents(prompt) {
+  return [
+    {
+      role: 'user',
+      parts: [{ text: prompt }],
+    },
+  ];
+}
+
+export function estimatePromptTokens(prompt) {
+  return Math.ceil(Buffer.byteLength(String(prompt || ''), 'utf8') / 3);
 }
 
 async function findGeminiCredentialFile() {
@@ -350,20 +723,52 @@ async function generateGeminiContentWithRetry(ai, params) {
 }
 
 function buildPrompt(analysis) {
+  return buildStructuredPrompt(PROMPT_INSTRUCTIONS, '분석 데이터:', analysis);
+}
+
+function buildChunkPrompt(analysis) {
+  return buildStructuredPrompt([...PROMPT_INSTRUCTIONS, ...CHUNK_PROMPT_INSTRUCTIONS], '분할 분석 데이터:', analysis);
+}
+
+function buildSynthesisPrompt(synthesisData) {
+  return buildStructuredPrompt([...PROMPT_INSTRUCTIONS, ...SYNTHESIS_PROMPT_INSTRUCTIONS], '통합 분석 데이터:', synthesisData);
+}
+
+function buildFollowUpPrompt(context) {
+  return buildStructuredPrompt(FOLLOW_UP_INSTRUCTIONS, '후속 질문 데이터:', context, FOLLOW_UP_OUTPUT_SCHEMA);
+}
+
+function buildFollowUpChunkPrompt(context) {
+  return buildStructuredPrompt(
+    [...FOLLOW_UP_INSTRUCTIONS, ...FOLLOW_UP_CHUNK_INSTRUCTIONS],
+    '후속 질문 분할 데이터:',
+    context,
+    FOLLOW_UP_CHUNK_OUTPUT_SCHEMA,
+  );
+}
+
+function buildFollowUpSynthesisPrompt(synthesisData) {
+  return buildStructuredPrompt(
+    [...FOLLOW_UP_INSTRUCTIONS, ...FOLLOW_UP_SYNTHESIS_INSTRUCTIONS],
+    '후속 질문 통합 데이터:',
+    synthesisData,
+    FOLLOW_UP_OUTPUT_SCHEMA,
+  );
+}
+
+function buildStructuredPrompt(instructions, dataLabel, data, outputSchema = PROMPT_OUTPUT_SCHEMA) {
   return [
-    ...PROMPT_INSTRUCTIONS,
+    ...instructions,
     '출력 스키마:',
-    JSON.stringify(PROMPT_OUTPUT_SCHEMA, null, 2),
-    '분석 데이터:',
-    JSON.stringify(analysis),
+    JSON.stringify(outputSchema, null, 2),
+    dataLabel,
+    JSON.stringify(data),
   ].join('\n\n');
 }
 
 function parseGeminiJson(text) {
-  const trimmed = String(text || '').trim().replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
-  try {
-    return JSON.parse(trimmed);
-  } catch {
+  const { parsed, trimmed } = parseJsonResponse(text);
+  if (!parsed) {
     return {
       headline: 'Gemini 응답을 JSON으로 해석하지 못했습니다.',
       summary: [trimmed.slice(0, 2000)],
@@ -375,6 +780,62 @@ function parseGeminiJson(text) {
       actionItems: [],
     };
   }
+  return parsed;
+}
+
+function parseFollowUpJson(text) {
+  const { parsed, trimmed } = parseJsonResponse(text);
+  if (!parsed) {
+    return {
+      answer: trimmed.slice(0, 12_000) || 'Gemini 응답을 해석하지 못했습니다.',
+      evidence: [],
+      caveats: ['응답 형식 오류가 있어 원문만 표시합니다.'],
+      suggestedQuestions: [],
+    };
+  }
+
+  return {
+    answer: String(parsed.answer || '').trim().slice(0, 12_000),
+    evidence: stringArray(parsed.evidence, 6),
+    caveats: stringArray(parsed.caveats, 3),
+    suggestedQuestions: stringArray(parsed.suggestedQuestions, 3),
+  };
+}
+
+function parseFollowUpChunkJson(text) {
+  const { parsed, trimmed } = parseJsonResponse(text);
+  if (!parsed) {
+    return {
+      relevance: Boolean(trimmed),
+      answer: trimmed.slice(0, 8_000),
+      evidence: [],
+      caveats: ['응답 형식 오류가 있어 원문만 전달합니다.'],
+    };
+  }
+
+  return {
+    relevance: Boolean(parsed.relevance),
+    answer: String(parsed.answer || '').trim().slice(0, 8_000),
+    evidence: stringArray(parsed.evidence, 8),
+    caveats: stringArray(parsed.caveats, 4),
+  };
+}
+
+function parseJsonResponse(text) {
+  const trimmed = String(text || '').trim().replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
+  try {
+    return { parsed: JSON.parse(trimmed), trimmed };
+  } catch {
+    return { parsed: null, trimmed };
+  }
+}
+
+function stringArray(value, limit) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => String(item || '').trim())
+    .filter(Boolean)
+    .slice(0, limit);
 }
 
 function summarizeAnalysisForResponse(analysis) {
@@ -416,7 +877,98 @@ function summarizeRecordUx(record) {
     latestPosition: latest.position || {},
     firstSeen: record.periods[0]?.start || '',
     lastSeen: record.periods.at(-1)?.end || '',
+    observedDays: new Set(record.occurrences.map((item) => item.date)).size,
+    periodCount: record.periods.length,
     occurrenceCountInLatestSnapshot: record.currentOccurrenceCount || 0,
+  };
+}
+
+export function summarizeOccurrences(occurrences) {
+  const sorted = occurrences.slice().sort(compareOccurrences);
+  const instancesByKey = new Map();
+
+  for (const occurrence of sorted) {
+    const key = occurrence.instanceKey || String(occurrence.sourceIndex || 0);
+    const instance = instancesByKey.get(key) || [];
+    instance.push(occurrence);
+    instancesByKey.set(key, instance);
+  }
+
+  const instances = Array.from(instancesByKey.values()).map((items) => {
+    const latest = items.at(-1) || {};
+    const changes = [];
+    let previousSignature = '';
+
+    for (const item of items) {
+      const state = materialObservationState(item);
+      const signature = JSON.stringify(state);
+      if (signature === previousSignature) continue;
+      previousSignature = signature;
+      changes.push({ date: item.date, ...state });
+    }
+
+    return {
+      firstSeen: items[0]?.date || '',
+      lastSeen: latest.date || '',
+      observedDays: new Set(items.map((item) => item.date)).size,
+      sourceOrder: latest.sourceIndex || 0,
+      latest: compactObservation(latest),
+      positionRange: summarizePositionRange(items),
+      materialChanges: changes,
+    };
+  });
+
+  return {
+    totalDailyObservations: sorted.length,
+    observedDays: new Set(sorted.map((item) => item.date)).size,
+    instanceCount: instances.length,
+    positionRange: summarizePositionRange(sorted),
+    instances,
+  };
+}
+
+function compactObservation(occurrence) {
+  return {
+    date: occurrence.date || '',
+    text: occurrence.text || '',
+    tag: occurrence.tag || '',
+    status: occurrence.status || '',
+    visible: Boolean(occurrence.visible),
+    inViewport: Boolean(occurrence.inViewport),
+    position: occurrence.position || {},
+  };
+}
+
+function materialObservationState(occurrence) {
+  return {
+    text: occurrence.text || '',
+    tag: occurrence.tag || '',
+    status: occurrence.status || '',
+    visible: Boolean(occurrence.visible),
+    inViewport: Boolean(occurrence.inViewport),
+    screenZone: occurrence.position?.screenZone || 'unknown',
+    aboveFold: Boolean(occurrence.position?.aboveFold),
+  };
+}
+
+function summarizePositionRange(occurrences) {
+  const positions = occurrences.map((item) => item.position || {}).filter((position) => Number.isFinite(Number(position.y)));
+  if (!positions.length) return {};
+
+  const values = (name) => positions.map((position) => Number(position[name] || 0));
+  const range = (name) => {
+    const numbers = values(name);
+    return { min: roundNumber(Math.min(...numbers)), max: roundNumber(Math.max(...numbers)) };
+  };
+
+  return {
+    x: range('x'),
+    y: range('y'),
+    width: range('width'),
+    height: range('height'),
+    screenZones: Array.from(new Set(positions.map((position) => position.screenZone || 'unknown'))),
+    aboveFoldObservations: positions.filter((position) => position.aboveFold).length,
+    visibleObservations: occurrences.filter((item) => item.visible).length,
   };
 }
 
@@ -466,9 +1018,9 @@ function latestOccurrence(occurrences) {
 function compareOccurrences(left, right) {
   return (
     left.date.localeCompare(right.date) ||
-    left.runId.localeCompare(right.runId) ||
+    String(left.instanceKey || '').localeCompare(String(right.instanceKey || '')) ||
     Number(left.sourceIndex || 0) - Number(right.sourceIndex || 0) ||
-    String(left.snapshotId || '').localeCompare(String(right.snapshotId || ''))
+    String(left.text || '').localeCompare(String(right.text || ''))
   );
 }
 
@@ -482,6 +1034,44 @@ function getInsightCachePath({ targetId, startDate, endDate }) {
   return path.join(INSIGHTS_CACHE_DIR, `${targetId}-${startDate}-${endDate}-${digest}.json`);
 }
 
+function getInsightAnalysisPath(cachePath) {
+  return cachePath.replace(/\.json$/, '.analysis.json');
+}
+
+function getFollowUpCachePath({ targetId, startDate, endDate, question, history }) {
+  const key = JSON.stringify({
+    version: FOLLOW_UP_CACHE_VERSION,
+    targetId,
+    startDate,
+    endDate,
+    question,
+    history,
+  });
+  const digest = crypto.createHash('sha1').update(key).digest('hex').slice(0, 20);
+  return path.join(FOLLOW_UP_CACHE_DIR, `${targetId}-${startDate}-${endDate}-${digest}.json`);
+}
+
+export function normalizeFollowUpQuestion(value) {
+  const question = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!question) throw new Error('question is required.');
+  if (question.length > MAX_FOLLOW_UP_QUESTION_LENGTH) {
+    throw new Error(`question must be ${MAX_FOLLOW_UP_QUESTION_LENGTH} characters or fewer.`);
+  }
+  return question;
+}
+
+export function normalizeFollowUpHistory(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((message) => {
+      const role = message?.role === 'assistant' ? 'assistant' : message?.role === 'user' ? 'user' : '';
+      const content = String(message?.content || '').replace(/\s+/g, ' ').trim().slice(0, MAX_FOLLOW_UP_HISTORY_CONTENT_LENGTH);
+      return { role, content };
+    })
+    .filter((message) => message.role && message.content)
+    .slice(-MAX_FOLLOW_UP_HISTORY_MESSAGES);
+}
+
 function emptyMetrics() {
   return { eventCount: 0, sessions: 0, activeUsers: 0 };
 }
@@ -492,10 +1082,6 @@ function metricNumber(value) {
 
 function cleanText(value) {
   return String(value || '').replace(/\s+/g, ' ').trim().slice(0, 240);
-}
-
-function shortSelector(value) {
-  return String(value || '').slice(0, 360);
 }
 
 function roundNumber(value) {
@@ -541,6 +1127,10 @@ function isRetryableGeminiError(error) {
 function formatGeminiError(error) {
   const status = Number(error?.status || 0);
   const message = String(error?.message || '');
+
+  if (status === 400 && /input token count|maximum number of tokens|INVALID_ARGUMENT/i.test(message)) {
+    return new Error('Gemini 입력 한도를 초과했습니다. 클릭 요소 데이터를 자동 압축하거나 영역별로 나눈 뒤 다시 분석해야 합니다.');
+  }
 
   if (status === 429 || /RESOURCE_EXHAUSTED/i.test(message)) {
     return new Error('Gemini API 사용량 또는 일시적 처리 용량이 초과되었습니다. 잠시 후 다시 시도해 주세요. 같은 기간/페이지에서 한 번 성공하면 이후에는 캐시된 결과를 사용합니다.');
