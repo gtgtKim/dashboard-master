@@ -3,7 +3,11 @@ import fsp from 'node:fs/promises';
 import crypto from 'node:crypto';
 import http from 'node:http';
 import path from 'node:path';
-import { queryAiFollowUp, queryAiInsights } from './ai-insights-api.mjs';
+import {
+  normalizeGeminiModelProfile,
+  queryAiFollowUp,
+  queryAiInsights,
+} from './ai-insights-api.mjs';
 import { queryGa4Metrics } from './ga4-data-api.mjs';
 
 const SNAPSHOTS_ROOT = path.resolve('snapshots');
@@ -150,6 +154,7 @@ async function handleAiInsights(url, response) {
   const targetId = url.searchParams.get('targetId') || '';
   const startDate = url.searchParams.get('startDate') || '';
   const endDate = url.searchParams.get('endDate') || '';
+  const requestedModel = url.searchParams.get('model') || '';
 
   if (!targetId) {
     sendJson(response, 400, { status: 'error', error: 'targetId is required.' });
@@ -157,13 +162,18 @@ async function handleAiInsights(url, response) {
   }
 
   try {
-    const requestKey = `insight:${targetId}:${startDate}:${endDate}`;
-    const result = await runSharedAiRequest(requestKey, () => queryAiInsights({ targetId, startDate, endDate }));
+    const model = normalizeGeminiModelProfile(requestedModel);
+    const requestKey = `insight:${model}:${targetId}:${startDate}:${endDate}`;
+    const result = await runSharedAiRequest(requestKey, () =>
+      queryAiInsights({ targetId, startDate, endDate, model }),
+    );
     sendJson(response, 200, result);
   } catch (error) {
-    sendJson(response, 500, {
+    const message = error instanceof Error ? error.message : String(error);
+    const clientError = /required|must be flash or pro|must be YYYY-MM-DD|earlier than or equal/i.test(message);
+    sendJson(response, clientError ? 400 : 500, {
       status: 'error',
-      error: error instanceof Error ? error.message : String(error),
+      error: message,
     });
   }
 }
@@ -185,13 +195,16 @@ async function handleAiFollowUp(request, response) {
   const endDate = String(body?.endDate || '');
   const question = String(body?.question || '');
   const history = Array.isArray(body?.history) ? body.history : [];
+  const requestedModel = String(body?.model || '');
   if (!targetId || !question.trim()) {
     sendJson(response, 400, { status: 'error', error: 'targetId and question are required.' });
     return;
   }
 
   try {
+    const model = normalizeGeminiModelProfile(requestedModel);
     const requestKey = `follow-up:${JSON.stringify({
+      model,
       targetId,
       startDate,
       endDate,
@@ -199,12 +212,13 @@ async function handleAiFollowUp(request, response) {
       history,
     })}`;
     const result = await runSharedAiRequest(requestKey, () =>
-      queryAiFollowUp({ targetId, startDate, endDate, question, history }),
+      queryAiFollowUp({ targetId, startDate, endDate, question, history, model }),
     );
     sendJson(response, 200, result);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    const clientError = /required|characters or fewer|must be YYYY-MM-DD|earlier than or equal/i.test(message);
+    const clientError =
+      /required|characters or fewer|must be flash or pro|must be YYYY-MM-DD|earlier than or equal/i.test(message);
     sendJson(response, clientError ? 400 : 500, {
       status: 'error',
       error: message,

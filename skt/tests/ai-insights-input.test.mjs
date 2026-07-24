@@ -2,11 +2,21 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   estimatePromptTokens,
+  normalizeGeminiModelProfile,
   normalizeFollowUpHistory,
   normalizeFollowUpQuestion,
   splitElementsToFit,
   summarizeOccurrences,
 } from '../scripts/ai-insights-api.mjs';
+
+test('defaults Gemini insights to Flash and allows only configured model profiles', () => {
+  assert.equal(normalizeGeminiModelProfile(''), 'flash');
+  assert.equal(normalizeGeminiModelProfile('flash'), 'flash');
+  assert.equal(normalizeGeminiModelProfile('pro'), 'pro');
+  assert.equal(normalizeGeminiModelProfile('gemini-3-flash-preview'), 'flash');
+  assert.equal(normalizeGeminiModelProfile('gemini-3.1-pro-preview'), 'pro');
+  assert.throws(() => normalizeGeminiModelProfile('gemini-unapproved-model'), /model must be flash or pro/);
+});
 
 test('compresses repeated daily element observations into one material state', () => {
   const occurrences = Array.from({ length: 100 }, (_, index) => ({
@@ -66,7 +76,7 @@ test('splits oversized insight input without dropping elements', async () => {
     },
   };
 
-  const chunks = await splitElementsToFit(ai, analysis, elements, 650);
+  const chunks = await splitElementsToFit(ai, analysis, elements, 1_500);
 
   assert.ok(chunks.length > 1);
   assert.deepEqual(chunks.flat(), elements);

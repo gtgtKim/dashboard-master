@@ -8,19 +8,39 @@ import { canonicalTrackingBase } from './skt-tracking-normalization.mjs';
 const SNAPSHOTS_ROOT = path.resolve('snapshots');
 const INPUT_SCHEMA_VERSION = 'compact-observations-v2';
 const PROMPT_INSTRUCTIONS = Object.freeze([
-  '너는 GA4와 이커머스/통신 상품 UX를 함께 보는 한국어 데이터 분석가다.',
+  '너는 GA4, 이커머스/통신 상품 UX, 콘텐츠 전략, 측정 설계를 함께 보는 시니어 한국어 데이터 분석가다.',
   '분석 대상은 SKT의 T world Shop 한국 메인페이지이며, PC는 shop.tworld.co.kr/shop/main, MO는 m.shop.tworld.co.kr/shop/main 데이터다.',
   '아래 JSON만 근거로 T world Shop 메인페이지 인사이트를 작성해라.',
   '데이터에 없는 사실, 판매 성과, 가입 전환, 구매 의도, 선호도, 원인 단정은 추측하지 마라.',
+  '관찰된 사실, 가능한 해석, 제안사항을 명확히 구분해라. 분석 문장은 [관찰], 대안 해석은 [가설], 개선안은 [제안] 성격이 드러나게 작성해라.',
+  '해석이나 제안에는 반드시 근거가 된 ga_action/ga_label과 수치 또는 위치/기간 정보를 함께 적어라. 근거가 부족하면 항목 수를 억지로 채우지 마라.',
+  '분석을 하나의 결론에 몰아가지 말고 독립된 탐색 접점, UX/정보구조, 콘텐츠/프로모션, GA4 성과, 태깅/측정 품질, 운영/기간 변화 관점을 각각 검토해라.',
+  '서로 다른 해석이 가능한 현상은 대안 해석과 이를 구분하기 위해 필요한 추가 데이터를 함께 제시해라.',
   'ga_action은 콘텐츠 영역 또는 컴포넌트 묶음, ga_label은 클릭 가능한 요소의 라벨로 해석하되 내부 태깅명일 수 있음을 감안해라.',
   '유지기간은 데이터 조회 기간 안에서 관찰된 기간이다. 유지기간 시작일을 실제 사이트 최초 노출일처럼 표현하지 마라.',
   '메인 배너, 최상단 띠배너, 휴대폰 구매/추천, 요금제/나만의 꿀 요금제, 이벤트/혜택처럼 ga_action별 콘텐츠 영역을 반드시 비교해라.',
   'rolling 배너나 carousel 요소는 offscreen으로 캡처될 수 있다. offscreen/hidden/inViewport 값만 보고 실제 사용자 노출 여부나 스와이프 행동을 단정하지 말고 해석 주의사항으로 다뤄라.',
   '오늘 날짜가 포함된 조회는 GA4 데이터가 지연될 수 있다. 수치가 낮거나 불완전해 보이면 확정 데이터 여부를 주의사항으로 남겨라.',
-  '액션 제안은 배치 변경을 단정적으로 권하지 말고, 태깅 점검, 소재 비교, 영역별 클릭 비중 확인, 추가 분석 가설 중심으로 작성해라.',
+  'eventCount는 클릭량이지 노출수나 클릭률이 아니다. 노출 데이터 없이 CTR, 주목도, 도달률을 계산하거나 단정하지 마라.',
+  '클릭량만으로 효율, 성과 우수, 반응 잠재력, 수요, 니즈, 선호, 관심, 콘텐츠 매력도를 단정하지 마라. 필요하면 "클릭량이 많다/적다"로만 표현해라.',
+  '요소별 sessions와 activeUsers는 같은 사용자가 여러 요소에 포함될 수 있으므로 요소나 그룹 간 단순 합계를 고유 세션/사용자 수처럼 표현하지 마라.',
+  '요소 activeUsers를 전체 activeUsers로 나눈 값을 도달률이라고 부르지 마라. eventCount/sessions를 계산할 때는 클릭 세션당 평균 클릭 횟수라고만 표현하고 원인을 추론하지 마라.',
+  '집계된 요소별 클릭 데이터에는 사용자별 선후 관계가 없다. 서로 다른 영역의 클릭을 하나의 사용자 여정으로 연결하거나 이탈, 퍼널 전환, 다음 행동, 탐색 실패로 단정하지 마라.',
+  'journeyInsights에서도 각 클릭 요소를 독립된 탐색 접점으로만 비교해라. "진입했다", "이후", "이어졌다", "이탈했다", "전환했다"처럼 사용자 이동 순서를 뜻하는 문장을 쓰지 마라.',
+  '화면의 y좌표는 캡처 HTML 안의 상대적 위치일 뿐 실제 사용자의 스크롤 도달을 뜻하지 않는다. 하단이라서 덜 노출되었다거나 도달률이 낮다고 단정하지 마라.',
+  'hidden/offscreen/inViewport는 캡처 시점의 DOM 상태다. UI가 복잡하다, 사용자가 펼쳤다, 스와이프했다, 자동 롤링되었다, 인터랙션 유도가 부족하다고 단정하는 근거로 사용하지 마라.',
+  'aboveFold도 캡처 HTML 좌표 기준이다. 사용자에게 실제 노출되었다고 표현하지 말고 "캡처 좌표상 aboveFold"라고만 표현해라.',
+  '캐러셀의 DOM 순서나 좌표만으로 실제 노출 순서와 노출 시간을 알 수 없다. 배너 클릭 차이를 소재 효과 또는 순서 효과로 확정하지 마라.',
+  '클릭량이 높은 요소는 위치, 노출 순서, 소재 자체의 영향이 섞여 있을 수 있다. 데이터만으로 원인을 분리할 수 없다면 가능한 설명을 병렬로 제시해라.',
+  '개선사항은 현재 배치를 바로 바꾸라고 단정하지 말고 [우선순위], 대상, 관찰 근거, 개선 가설, 기대 신호, 검증 방법을 포함해라.',
+  '제안사항에는 태깅 점검, 소재 비교, 영역별 클릭 비중 확인, 퍼널/전환 후속 분석, A/B 테스트처럼 실행하거나 검증할 수 있는 다음 단계를 포함해라.',
   'elements에는 모든 표 행이 들어 있고 observations.instances에는 같은 행으로 병합된 실제 클릭 요소별 관찰 정보가 압축되어 있다. 모든 클릭 요소와 위치/유지기간/GA4 수치를 빠짐없이 고려해라.',
   'observations의 위치 범위와 materialChanges는 날짜별 중복 좌표를 압축한 값이다. 값이 없다는 이유로 변화가 없었다고 단정하지 마라.',
-  '각 섹션에는 가능한 한 구체적인 수치를 포함해라.',
+  '조회 기간 전체의 집계 수치만 제공된 경우 특정 날짜의 성과 증감이나 요소 교체 전후 효과를 계산하지 마라.',
+  '스냅샷이 하루뿐이면 신규, 소멸, 유지, 위치 변화라고 표현하지 말고 기간 변화는 평가할 수 없다고 명시해라.',
+  '각 섹션에는 가능한 한 구체적인 수치를 포함하되 같은 내용을 여러 섹션에서 반복하지 마라.',
+  '개선 제안은 최소 3개 관점에서 제시하고, 일반론 대신 현재 데이터의 구체적인 요소를 대상으로 작성해라.',
+  'JSON 출력 전에 summary, journeyInsights, uxInsights, contentInsights, metricInsights, sectionInsights를 다시 점검해라. 이 관찰 섹션에 클릭스트림, 노출, 도달, 스크롤, 전환, 이탈, 선호, 관심, 수요, 원인에 대한 단정이 있으면 집계 클릭량에 대한 중립적 표현으로 고쳐라.',
   '반드시 JSON만 출력해라. 마크다운 코드블록은 쓰지 마라.',
 ]);
 const CHUNK_PROMPT_INSTRUCTIONS = Object.freeze([
@@ -32,16 +52,23 @@ const SYNTHESIS_PROMPT_INSTRUCTIONS = Object.freeze([
   '아래 JSON에는 같은 조회의 전체 영역 합계와 모든 데이터 조각의 분석 결과가 들어 있다.',
   '모든 조각을 빠짐없이 통합하고 중복되는 관찰은 합쳐 최종 SKT T world Shop 인사이트를 작성해라.',
   '조각별 표현을 그대로 나열하지 말고 전체 페이지 관점에서 영역과 수치를 비교해라.',
+  '각 관점의 결론과 개선 제안이 특정 조각에 치우치지 않았는지 확인하고, 상충하는 관찰은 대안 해석에 남겨라.',
 ]);
 const PROMPT_OUTPUT_SCHEMA = Object.freeze({
-  headline: '한 문장 핵심 결론',
-  summary: ['핵심 요약 3~5개'],
-  uxInsights: ['위치, 화면 순서, 영역 맥락을 반영한 UX 인사이트 3~5개'],
-  metricInsights: ['GA4 수치 기반 인사이트 3~5개'],
-  sectionInsights: ['ga_action별 콘텐츠 영역 분석 3~5개'],
-  changes: ['유지기간/신규/소멸/변경 관련 관찰 2~4개'],
+  headline: '인과 추론 없이 클릭 데이터에서 직접 확인되는 한 문장 핵심 결론',
+  summary: ['[관찰] 핵심 요약 3~5개'],
+  journeyInsights: ['[관찰] 각 요소를 독립적으로 다루고 사용자 이동 순서를 연결하지 않는 탐색 접점별 클릭 분석 2~4개'],
+  uxInsights: ['[관찰] 위치와 영역 맥락을 반영하되 실제 노출/스크롤을 추론하지 않는 UX 분석 2~4개'],
+  contentInsights: ['[관찰] 상품, 요금제, 혜택, 프로모션 소재별 클릭량 비교 2~4개'],
+  metricInsights: ['[관찰] GA4 수치 기반 분석 3~5개'],
+  sectionInsights: ['[관찰] ga_action별 콘텐츠 영역 분석 3~5개'],
+  measurementInsights: ['[관찰] 태깅 일관성, 중복, 누락 가능성, 추가 측정 필요사항 2~4개'],
+  alternativeInterpretations: ['[가설] 가능한 해석 A/B | 현재 데이터로 구분 불가 | 추가 데이터: ... 형식 2~4개'],
+  changes: ['유지기간/신규/소멸/변경 관련 관찰 0~4개. 스냅샷이 하루뿐이면 변화 평가 불가 1개만 작성'],
   watchouts: ['데이터 해석 주의사항 2~4개'],
-  actionItems: ['확인 또는 실행 제안 3~5개'],
+  improvementIdeas: ['[제안][우선순위: 높음/중간/낮음] 대상 | 관찰 근거 | 개선 가설 | 기대 신호 | 검증 방법 형식의 개선안 3~6개'],
+  experimentIdeas: ['[제안] 검증할 가설, 비교군, 핵심 판단 지표가 포함된 실험/분석안 2~4개'],
+  actionItems: ['[제안] 담당자가 바로 확인하거나 실행할 수 있는 다음 단계 3~5개'],
 });
 const FOLLOW_UP_INSTRUCTIONS = Object.freeze([
   '너는 SKT T world Shop 메인페이지 대시보드의 후속 질문에 답하는 한국어 데이터 분석가다.',
@@ -105,7 +132,21 @@ const INSIGHTS_CACHE_DIR = path.join(SNAPSHOTS_ROOT, 'ai-insights');
 const FOLLOW_UP_CACHE_DIR = path.join(SNAPSHOTS_ROOT, 'ai-follow-ups');
 const GEMINI_PROJECT = process.env.GEMINI_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID || 'gyutae-test-project';
 const GEMINI_LOCATION = process.env.GEMINI_LOCATION || process.env.GOOGLE_CLOUD_LOCATION || 'global';
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.1-pro-preview';
+const DEFAULT_GEMINI_MODEL_PROFILE = 'flash';
+const GEMINI_MODEL_PROFILES = Object.freeze({
+  flash: Object.freeze({
+    key: 'flash',
+    id: process.env.GEMINI_FLASH_MODEL || 'gemini-3-flash-preview',
+    label: 'Gemini 3 Flash',
+    thinkingLevel: '',
+  }),
+  pro: Object.freeze({
+    key: 'pro',
+    id: process.env.GEMINI_PRO_MODEL || process.env.GEMINI_MODEL || 'gemini-3.1-pro-preview',
+    label: 'Gemini 3.1 Pro',
+    thinkingLevel: 'HIGH',
+  }),
+});
 const GEMINI_APPLICATION_CREDENTIALS = process.env.GEMINI_APPLICATION_CREDENTIALS || process.env.GEMINI_GOOGLE_APPLICATION_CREDENTIALS || '';
 const MAX_OUTPUT_TOKENS = positiveInteger(process.env.GEMINI_INSIGHTS_MAX_OUTPUT_TOKENS, 16_384);
 const MAX_INPUT_TOKENS = positiveInteger(process.env.GEMINI_INSIGHTS_MAX_INPUT_TOKENS, 400_000);
@@ -115,32 +156,34 @@ const CHUNK_INPUT_TOKENS = Math.min(
 );
 const GEMINI_RETRY_ATTEMPTS = positiveInteger(process.env.GEMINI_INSIGHTS_RETRY_ATTEMPTS, 3);
 const GEMINI_RETRY_DELAY_MS = positiveInteger(process.env.GEMINI_INSIGHTS_RETRY_DELAY_MS, 12_000);
-const CACHE_VERSION = `v2:${GEMINI_MODEL}:${INPUT_SCHEMA_VERSION}:${PROMPT_VERSION}`;
-const FOLLOW_UP_CACHE_VERSION = `v1:${GEMINI_MODEL}:${INPUT_SCHEMA_VERSION}:${FOLLOW_UP_VERSION}`;
 const MAX_FOLLOW_UP_QUESTION_LENGTH = 1_000;
 const MAX_FOLLOW_UP_HISTORY_MESSAGES = 8;
 const MAX_FOLLOW_UP_HISTORY_CONTENT_LENGTH = 3_000;
 
-export async function queryAiInsights({ targetId, startDate, endDate }) {
+export async function queryAiInsights({ targetId, startDate, endDate, model = DEFAULT_GEMINI_MODEL_PROFILE }) {
   validateDate(startDate, 'startDate');
   validateDate(endDate, 'endDate');
   if (!targetId) throw new Error('targetId is required.');
   if (startDate > endDate) throw new Error('startDate must be earlier than or equal to endDate.');
 
-  const cachePath = getInsightCachePath({ targetId, startDate, endDate });
+  const modelProfile = resolveGeminiModelProfile(model);
+  const cacheVersion = insightCacheVersion(modelProfile);
+  const cachePath = getInsightCachePath({ targetId, startDate, endDate, modelProfile });
   const cached = await readJsonFile(cachePath);
   if (cached) return { ...cached, cached: true };
 
   const analysis = await buildInsightInput({ targetId, startDate, endDate });
-  const generation = await generateGeminiInsight(analysis);
+  const generation = await generateGeminiInsight(analysis, modelProfile);
   const payload = {
     status: 'ok',
     cached: false,
-    cacheVersion: CACHE_VERSION,
+    cacheVersion,
     promptVersion: PROMPT_VERSION,
     generatedAt: new Date().toISOString(),
     provider: 'vertex-ai',
-    model: GEMINI_MODEL,
+    model: modelProfile.id,
+    modelProfile: modelProfile.key,
+    modelLabel: modelProfile.label,
     targetId,
     startDate,
     endDate,
@@ -161,12 +204,21 @@ export async function queryAiInsights({ targetId, startDate, endDate }) {
   return payload;
 }
 
-export async function queryAiFollowUp({ targetId, startDate, endDate, question, history = [] }) {
+export async function queryAiFollowUp({
+  targetId,
+  startDate,
+  endDate,
+  question,
+  history = [],
+  model = DEFAULT_GEMINI_MODEL_PROFILE,
+}) {
   validateDate(startDate, 'startDate');
   validateDate(endDate, 'endDate');
   if (!targetId) throw new Error('targetId is required.');
   if (startDate > endDate) throw new Error('startDate must be earlier than or equal to endDate.');
 
+  const modelProfile = resolveGeminiModelProfile(model);
+  const followUpCacheVersion = followUpCacheVersionFor(modelProfile);
   const normalizedQuestion = normalizeFollowUpQuestion(question);
   const normalizedHistory = normalizeFollowUpHistory(history);
   const followUpCachePath = getFollowUpCachePath({
@@ -175,12 +227,13 @@ export async function queryAiFollowUp({ targetId, startDate, endDate, question, 
     endDate,
     question: normalizedQuestion,
     history: normalizedHistory,
+    modelProfile,
   });
   const cached = await readJsonFile(followUpCachePath);
   if (cached) return { ...cached, cached: true };
 
-  const originalInsight = await queryAiInsights({ targetId, startDate, endDate });
-  const insightCachePath = getInsightCachePath({ targetId, startDate, endDate });
+  const originalInsight = await queryAiInsights({ targetId, startDate, endDate, model: modelProfile.key });
+  const insightCachePath = getInsightCachePath({ targetId, startDate, endDate, modelProfile });
   const analysisPath = getInsightAnalysisPath(insightCachePath);
   let analysis = await readJsonFile(analysisPath);
   if (!analysis) {
@@ -198,14 +251,16 @@ export async function queryAiFollowUp({ targetId, startDate, endDate, question, 
     },
     question: normalizedQuestion,
     history: normalizedHistory,
-  });
+  }, modelProfile);
   const payload = {
     status: 'ok',
     cached: false,
-    cacheVersion: FOLLOW_UP_CACHE_VERSION,
+    cacheVersion: followUpCacheVersion,
     generatedAt: new Date().toISOString(),
     provider: 'vertex-ai',
-    model: GEMINI_MODEL,
+    model: modelProfile.id,
+    modelProfile: modelProfile.key,
+    modelLabel: modelProfile.label,
     targetId,
     startDate,
     endDate,
@@ -255,6 +310,8 @@ async function buildInsightInput({ targetId, startDate, endDate }) {
         'GA4 eventCount/session/user는 선택 기간과 페이지 기준으로 조회합니다. eventName=click, PC는 event_category=TWD_main, MO는 event_category=MTWD_main 및 hostName=m.shop.tworld.co.kr 조건입니다.',
       aiRule:
         'AI는 제공된 JSON에 있는 숫자와 위치 정보만 근거로 분석해야 하며, 날짜별 중복 관찰은 요소별 기간과 위치 범위 및 중요한 변경점으로 압축됩니다.',
+      aiEvidenceLimit:
+        '제공 데이터는 선택 기간의 요소별 집계 클릭 수, 세션 수, 사용자 수와 봇 캡처 좌표입니다. 사용자별 클릭 순서, 노출수, 배너별 노출 시간, 실제 스크롤 도달, 전환/매출 데이터는 제공되지 않으므로 사용자 여정 연결, CTR, 도달률, 이탈률, 전환율, 위치/소재의 인과 효과를 계산하거나 단정할 수 없습니다.',
     },
     page: {
       site: 'tworld-shop',
@@ -451,20 +508,20 @@ function buildGroups(records, ga4) {
     .sort((left, right) => right.metrics.eventCount - left.metrics.eventCount);
 }
 
-async function generateGeminiInsight(analysis) {
+async function generateGeminiInsight(analysis, modelProfile) {
   const ai = await createGeminiClient();
   const prompt = buildPrompt(analysis);
-  const promptTokens = await countPromptTokens(ai, prompt);
+  const promptTokens = await countPromptTokens(ai, prompt, modelProfile);
   if (promptTokens <= MAX_INPUT_TOKENS) {
     return {
-      insight: await generatePromptInsight(ai, prompt),
+      insight: await generatePromptInsight(ai, prompt, modelProfile),
       mode: 'single',
       inputTokens: promptTokens,
       chunkCount: 1,
     };
   }
 
-  return generateChunkedGeminiInsight(ai, analysis);
+  return generateChunkedGeminiInsight(ai, analysis, modelProfile);
 }
 
 async function createGeminiClient() {
@@ -477,8 +534,8 @@ async function createGeminiClient() {
   });
 }
 
-async function generateChunkedGeminiInsight(ai, analysis) {
-  const chunks = await splitElementsToFit(ai, analysis, analysis.elements);
+async function generateChunkedGeminiInsight(ai, analysis, modelProfile) {
+  const chunks = await splitElementsToFit(ai, analysis, analysis.elements, CHUNK_INPUT_TOKENS, modelProfile);
   const chunkResults = [];
   let inputTokens = 0;
 
@@ -488,13 +545,13 @@ async function generateChunkedGeminiInsight(ai, analysis) {
       count: chunks.length,
     });
     const prompt = buildChunkPrompt(chunkAnalysis);
-    const tokenCount = await countPromptTokens(ai, prompt);
+    const tokenCount = await countPromptTokens(ai, prompt, modelProfile);
     inputTokens += tokenCount;
     chunkResults.push({
       index: index + 1,
       elementCount: elements.length,
       actions: Array.from(new Set(elements.map((record) => record.tracking.action))),
-      insight: await generatePromptInsight(ai, prompt),
+      insight: await generatePromptInsight(ai, prompt, modelProfile),
     });
   }
 
@@ -508,33 +565,39 @@ async function generateChunkedGeminiInsight(ai, analysis) {
     chunkResults,
   };
   const synthesisPrompt = buildSynthesisPrompt(synthesisData);
-  const synthesisTokens = await countPromptTokens(ai, synthesisPrompt);
+  const synthesisTokens = await countPromptTokens(ai, synthesisPrompt, modelProfile);
   if (synthesisTokens > MAX_INPUT_TOKENS) {
     throw new Error('Gemini 분할 분석 결과도 입력 한도를 초과했습니다. 조회 기간을 나누어 분석해 주세요.');
   }
 
   inputTokens += synthesisTokens;
   return {
-    insight: await generatePromptInsight(ai, synthesisPrompt),
+    insight: await generatePromptInsight(ai, synthesisPrompt, modelProfile),
     mode: 'chunked',
     inputTokens,
     chunkCount: chunks.length,
   };
 }
 
-async function generateGeminiFollowUp(ai, context) {
+async function generateGeminiFollowUp(ai, context, modelProfile) {
   const prompt = buildFollowUpPrompt(context);
-  const promptTokens = await countPromptTokens(ai, prompt);
+  const promptTokens = await countPromptTokens(ai, prompt, modelProfile);
   if (promptTokens <= MAX_INPUT_TOKENS) {
     return {
-      response: await generatePromptFollowUp(ai, prompt),
+      response: await generatePromptFollowUp(ai, prompt, modelProfile),
       mode: 'single',
       inputTokens: promptTokens,
       chunkCount: 1,
     };
   }
 
-  const chunks = await splitFollowUpElementsToFit(ai, context, context.analysis.elements);
+  const chunks = await splitFollowUpElementsToFit(
+    ai,
+    context,
+    context.analysis.elements,
+    CHUNK_INPUT_TOKENS,
+    modelProfile,
+  );
   const chunkResults = [];
   let inputTokens = 0;
 
@@ -544,13 +607,13 @@ async function generateGeminiFollowUp(ai, context) {
       count: chunks.length,
     });
     const chunkPrompt = buildFollowUpChunkPrompt(chunkContext);
-    const tokenCount = await countPromptTokens(ai, chunkPrompt);
+    const tokenCount = await countPromptTokens(ai, chunkPrompt, modelProfile);
     inputTokens += tokenCount;
     chunkResults.push({
       index: index + 1,
       actions: Array.from(new Set(elements.map((record) => record.tracking.action))),
       elementCount: elements.length,
-      response: await generatePromptFollowUpChunk(ai, chunkPrompt),
+      response: await generatePromptFollowUpChunk(ai, chunkPrompt, modelProfile),
     });
   }
 
@@ -566,31 +629,37 @@ async function generateGeminiFollowUp(ai, context) {
     chunkResults,
   };
   const synthesisPrompt = buildFollowUpSynthesisPrompt(synthesisData);
-  const synthesisTokens = await countPromptTokens(ai, synthesisPrompt);
+  const synthesisTokens = await countPromptTokens(ai, synthesisPrompt, modelProfile);
   if (synthesisTokens > MAX_INPUT_TOKENS) {
     throw new Error('후속 질문의 분할 분석 결과가 입력 한도를 초과했습니다. 질문 범위를 조금 더 구체적으로 작성해 주세요.');
   }
 
   inputTokens += synthesisTokens;
   return {
-    response: await generatePromptFollowUp(ai, synthesisPrompt),
+    response: await generatePromptFollowUp(ai, synthesisPrompt, modelProfile),
     mode: 'chunked',
     inputTokens,
     chunkCount: chunks.length,
   };
 }
 
-async function splitFollowUpElementsToFit(ai, context, elements, tokenBudget = CHUNK_INPUT_TOKENS) {
+async function splitFollowUpElementsToFit(
+  ai,
+  context,
+  elements,
+  tokenBudget = CHUNK_INPUT_TOKENS,
+  modelProfile = GEMINI_MODEL_PROFILES[DEFAULT_GEMINI_MODEL_PROFILE],
+) {
   const prompt = buildFollowUpChunkPrompt(followUpContextForElements(context, elements, { index: 1, count: 1 }));
-  const tokenCount = await countPromptTokens(ai, prompt);
+  const tokenCount = await countPromptTokens(ai, prompt, modelProfile);
   if (tokenCount <= tokenBudget) return [elements];
   if (elements.length <= 1) {
     throw new Error('단일 클릭 요소의 후속 질문 입력이 허용 크기를 초과했습니다.');
   }
 
   const midpoint = Math.ceil(elements.length / 2);
-  const left = await splitFollowUpElementsToFit(ai, context, elements.slice(0, midpoint), tokenBudget);
-  const right = await splitFollowUpElementsToFit(ai, context, elements.slice(midpoint), tokenBudget);
+  const left = await splitFollowUpElementsToFit(ai, context, elements.slice(0, midpoint), tokenBudget, modelProfile);
+  const right = await splitFollowUpElementsToFit(ai, context, elements.slice(midpoint), tokenBudget, modelProfile);
   return [...left, ...right];
 }
 
@@ -603,17 +672,23 @@ function followUpContextForElements(context, elements, chunk) {
   };
 }
 
-export async function splitElementsToFit(ai, analysis, elements, tokenBudget = CHUNK_INPUT_TOKENS) {
+export async function splitElementsToFit(
+  ai,
+  analysis,
+  elements,
+  tokenBudget = CHUNK_INPUT_TOKENS,
+  modelProfile = GEMINI_MODEL_PROFILES[DEFAULT_GEMINI_MODEL_PROFILE],
+) {
   const prompt = buildChunkPrompt(analysisForElements(analysis, elements, { index: 1, count: 1 }));
-  const tokenCount = await countPromptTokens(ai, prompt);
+  const tokenCount = await countPromptTokens(ai, prompt, modelProfile);
   if (tokenCount <= tokenBudget) return [elements];
   if (elements.length <= 1) {
     throw new Error('단일 클릭 요소의 Gemini 입력이 허용 크기를 초과했습니다.');
   }
 
   const midpoint = Math.ceil(elements.length / 2);
-  const left = await splitElementsToFit(ai, analysis, elements.slice(0, midpoint), tokenBudget);
-  const right = await splitElementsToFit(ai, analysis, elements.slice(midpoint), tokenBudget);
+  const left = await splitElementsToFit(ai, analysis, elements.slice(0, midpoint), tokenBudget, modelProfile);
+  const right = await splitElementsToFit(ai, analysis, elements.slice(midpoint), tokenBudget, modelProfile);
   return [...left, ...right];
 }
 
@@ -632,36 +707,38 @@ function analysisForElements(analysis, elements, chunk) {
   };
 }
 
-async function generatePromptInsight(ai, prompt) {
-  return generatePromptJson(ai, prompt, parseGeminiJson);
+async function generatePromptInsight(ai, prompt, modelProfile) {
+  return generatePromptJson(ai, prompt, parseGeminiJson, modelProfile);
 }
 
-async function generatePromptFollowUp(ai, prompt) {
-  return generatePromptJson(ai, prompt, parseFollowUpJson);
+async function generatePromptFollowUp(ai, prompt, modelProfile) {
+  return generatePromptJson(ai, prompt, parseFollowUpJson, modelProfile);
 }
 
-async function generatePromptFollowUpChunk(ai, prompt) {
-  return generatePromptJson(ai, prompt, parseFollowUpChunkJson);
+async function generatePromptFollowUpChunk(ai, prompt, modelProfile) {
+  return generatePromptJson(ai, prompt, parseFollowUpChunkJson, modelProfile);
 }
 
-async function generatePromptJson(ai, prompt, parser) {
+async function generatePromptJson(ai, prompt, parser, modelProfile) {
   const response = await generateGeminiContentWithRetry(ai, {
-    model: GEMINI_MODEL,
+    model: modelProfile.id,
     contents: promptContents(prompt),
     config: {
       temperature: 0.2,
       maxOutputTokens: MAX_OUTPUT_TOKENS,
       responseMimeType: 'application/json',
-      thinkingConfig: { thinkingLevel: 'HIGH' },
+      ...(modelProfile.thinkingLevel
+        ? { thinkingConfig: { thinkingLevel: modelProfile.thinkingLevel } }
+        : {}),
     },
   });
   return parser(response.text || '');
 }
 
-async function countPromptTokens(ai, prompt) {
+async function countPromptTokens(ai, prompt, modelProfile) {
   try {
     const response = await ai.models.countTokens({
-      model: GEMINI_MODEL,
+      model: modelProfile.id,
       contents: promptContents(prompt),
     });
     const totalTokens = Number(response.totalTokens || 0);
@@ -772,11 +849,17 @@ function parseGeminiJson(text) {
     return {
       headline: 'Gemini 응답을 JSON으로 해석하지 못했습니다.',
       summary: [trimmed.slice(0, 2000)],
+      journeyInsights: [],
       uxInsights: [],
+      contentInsights: [],
       metricInsights: [],
       sectionInsights: [],
+      measurementInsights: [],
+      alternativeInterpretations: [],
       changes: [],
       watchouts: ['응답 형식 오류가 있어 원문 일부만 표시합니다.'],
+      improvementIdeas: [],
+      experimentIdeas: [],
       actionItems: [],
     };
   }
@@ -1028,8 +1111,8 @@ function getTarget(run, targetId) {
   return run?.targets?.find((target) => target.id === targetId) || null;
 }
 
-function getInsightCachePath({ targetId, startDate, endDate }) {
-  const key = `${CACHE_VERSION}:${targetId}:${startDate}:${endDate}`;
+function getInsightCachePath({ targetId, startDate, endDate, modelProfile }) {
+  const key = `${insightCacheVersion(modelProfile)}:${targetId}:${startDate}:${endDate}`;
   const digest = crypto.createHash('sha1').update(key).digest('hex').slice(0, 16);
   return path.join(INSIGHTS_CACHE_DIR, `${targetId}-${startDate}-${endDate}-${digest}.json`);
 }
@@ -1038,9 +1121,9 @@ function getInsightAnalysisPath(cachePath) {
   return cachePath.replace(/\.json$/, '.analysis.json');
 }
 
-function getFollowUpCachePath({ targetId, startDate, endDate, question, history }) {
+function getFollowUpCachePath({ targetId, startDate, endDate, question, history, modelProfile }) {
   const key = JSON.stringify({
-    version: FOLLOW_UP_CACHE_VERSION,
+    version: followUpCacheVersionFor(modelProfile),
     targetId,
     startDate,
     endDate,
@@ -1049,6 +1132,29 @@ function getFollowUpCachePath({ targetId, startDate, endDate, question, history 
   });
   const digest = crypto.createHash('sha1').update(key).digest('hex').slice(0, 20);
   return path.join(FOLLOW_UP_CACHE_DIR, `${targetId}-${startDate}-${endDate}-${digest}.json`);
+}
+
+function insightCacheVersion(modelProfile) {
+  return `v3:${modelProfile.id}:${INPUT_SCHEMA_VERSION}:${PROMPT_VERSION}`;
+}
+
+function followUpCacheVersionFor(modelProfile) {
+  return `v2:${modelProfile.id}:${INPUT_SCHEMA_VERSION}:${FOLLOW_UP_VERSION}`;
+}
+
+export function normalizeGeminiModelProfile(value) {
+  return resolveGeminiModelProfile(value).key;
+}
+
+function resolveGeminiModelProfile(value) {
+  const requested = String(value || DEFAULT_GEMINI_MODEL_PROFILE).trim().toLowerCase();
+  const profile =
+    GEMINI_MODEL_PROFILES[requested] ||
+    Object.values(GEMINI_MODEL_PROFILES).find((candidate) => candidate.id.toLowerCase() === requested);
+  if (!profile) {
+    throw new Error('model must be flash or pro.');
+  }
+  return profile;
 }
 
 export function normalizeFollowUpQuestion(value) {

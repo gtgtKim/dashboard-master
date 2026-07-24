@@ -3245,13 +3245,24 @@ function renderSnapshotCatalog() {
 
     .insights-head {
       display: flex;
-      align-items: center;
+      flex-wrap: wrap;
+      align-items: flex-end;
       justify-content: space-between;
       gap: 10px;
       min-width: 0;
     }
 
-    .insights-head > button {
+    .insights-head-controls {
+      display: flex;
+      flex: 0 1 auto;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      justify-content: flex-end;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .insights-head-controls > button {
       flex: 0 0 auto;
       min-width: 52px;
       white-space: nowrap;
@@ -3259,9 +3270,42 @@ function renderSnapshotCatalog() {
 
     .insights-title {
       display: grid;
+      flex: 1 1 180px;
       gap: 3px;
       min-width: 0;
       font-size: 13px;
+    }
+
+    .insights-model-control {
+      display: grid;
+      flex: 1 1 180px;
+      gap: 3px;
+      min-width: min(180px, 100%);
+      color: #596579;
+      font-size: 10px;
+      font-weight: 700;
+    }
+
+    .insights-model-control select {
+      height: 30px;
+      min-width: 180px;
+      padding: 0 28px 0 9px;
+      font-size: 12px;
+    }
+
+    .insights-cost-note {
+      margin: 0;
+      padding: 8px 10px;
+      border-left: 3px solid #c76a00;
+      background: #fff8e8;
+      color: #5f430f;
+      font-size: 11px;
+      font-weight: 600;
+      line-height: 1.45;
+    }
+
+    .insights-cost-note[hidden] {
+      display: none;
     }
 
     .insights-title small,
@@ -3484,6 +3528,10 @@ function renderSnapshotCatalog() {
       margin: -2px 0 -6px;
       cursor: row-resize;
       touch-action: none;
+    }
+
+    .insights-resizer[hidden] {
+      display: none;
     }
 
     .insights-resizer::before {
@@ -3951,8 +3999,9 @@ function renderSnapshotCatalog() {
           </section>
           <section class="help-section">
             <h3>Gemini 인사이트</h3>
-            <p>GA Attributes 왼쪽의 Gemini 아이콘을 누르면 선택한 기간과 페이지의 모든 클릭 요소, 위치, 유지기간, GA4 수치, 대시보드 해석 규칙을 Gemini 3.1 Pro로 분석합니다. 날짜별 중복 관찰은 요소별 기간과 위치 변화로 압축하고, 입력이 클 때는 영역별로 나누어 분석한 뒤 통합합니다. 같은 기간과 페이지, 같은 모델과 프롬프트는 캐시된 결과를 다시 보여줍니다.</p>
-            <p>SKT T world Shop 메인페이지 기준으로 메인 배너, 휴대폰 구매/추천, 요금제, 나만의 꿀 요금제, 이벤트/혜택 등 콘텐츠 영역별 클릭 흐름과 태깅 해석 주의사항을 함께 검토합니다.</p>
+            <p>GA Attributes 왼쪽의 Gemini 아이콘을 누르면 분석 모델을 선택할 수 있습니다. 기본값은 비용이 낮은 <strong>Gemini 3 Flash</strong>이며, 더 정밀한 분석이 필요할 때 <strong>Gemini 3.1 Pro</strong>를 선택할 수 있습니다. Pro를 선택하면 신규 요청 1회당 약 US$1의 비용 안내가 표시됩니다.</p>
+            <p>선택한 기간과 페이지의 모든 클릭 요소, 위치, 유지기간, GA4 수치, 대시보드 해석 규칙을 탐색 접점, UX/정보구조, 콘텐츠/프로모션, 수치 성과, 측정 품질, 기간 변화 관점에서 분석합니다. 날짜별 중복 관찰은 요소별 기간과 위치 변화로 압축하고, 입력이 클 때는 영역별로 나누어 분석한 뒤 통합합니다.</p>
+            <p>같은 기간과 페이지, 같은 모델과 프롬프트는 캐시된 결과를 다시 보여주므로 추가 Gemini 과금이 발생하지 않습니다. 모델이 다르거나 프롬프트가 바뀌면 별도 결과로 새로 생성합니다.</p>
             <p>기본 인사이트 아래의 <strong>추가 질문</strong> 입력란에서 특정 영역 비교, 수치 근거, 유지기간 변화처럼 더 궁금한 내용을 이어서 물을 수 있습니다. 같은 대화의 최근 질문과 답변을 문맥으로 사용하며, 페이지 또는 조회 기간을 바꾸면 대화는 초기화됩니다.</p>
             <p>결과 칸이 열린 뒤에는 칸 하단 경계선을 위아래로 드래그해서 인사이트 영역 높이를 조정할 수 있습니다.</p>
           </section>
@@ -4001,9 +4050,9 @@ function renderSnapshotCatalog() {
         <div class="panel-head">
           <div class="panel-title-row">
             <span class="gemini-trigger-wrap">
-              <button class="gemini-trigger" id="insightsTrigger" type="button" aria-label="Gemini 인사이트 생성"><span aria-hidden="true">✦</span></button>
+              <button class="gemini-trigger" id="insightsTrigger" type="button" aria-label="Gemini 인사이트 열기"><span aria-hidden="true">✦</span></button>
               <span class="gemini-hint" id="insightsHint">
-                <span>클릭하면 Gemini 인사이트가 나옵니다.</span>
+                <span>클릭해서 분석 모델을 선택하고 Gemini 인사이트를 생성하세요.</span>
                 <button class="gemini-hint-close" id="insightsHintClose" type="button" aria-label="Gemini 안내 닫기">×</button>
               </span>
             </span>
@@ -4015,10 +4064,20 @@ function renderSnapshotCatalog() {
           <div class="insights-head">
             <div class="insights-title">
               <strong>Gemini 인사이트</strong>
-              <small id="insightsMeta">선택한 기간과 페이지 기준으로 생성합니다.</small>
+              <small id="insightsMeta">모델을 선택한 뒤 생성합니다.</small>
             </div>
-            <button id="insightsButton" type="button">생성</button>
+            <div class="insights-head-controls">
+              <label class="insights-model-control">
+                분석 모델
+                <select id="insightsModelSelect" aria-label="Gemini 분석 모델">
+                  <option value="flash" selected>Flash · 빠른 분석 (기본)</option>
+                  <option value="pro">Pro · 정밀 분석</option>
+                </select>
+              </label>
+              <button id="insightsButton" type="button">생성</button>
+            </div>
           </div>
+          <p class="insights-cost-note" id="insightsCostNote" hidden><strong>Pro 비용 안내:</strong> 현재 데이터 규모에서 신규 프롬프트 1회당 약 US$1가 과금될 수 있습니다. 조회 기간과 토큰 수에 따라 달라지며, 캐시된 결과 조회에는 추가 과금이 없습니다.</p>
           <div class="insights-body" id="insightsBody" hidden>
             <div class="insights-content" id="insightsContent"></div>
             <section class="insights-chat" id="insightsChat" aria-label="Gemini 추가 질문" hidden>
@@ -4117,6 +4176,8 @@ function renderSnapshotCatalog() {
     const insightsHint = document.getElementById('insightsHint');
     const insightsHintClose = document.getElementById('insightsHintClose');
     const insightsButton = document.getElementById('insightsButton');
+    const insightsModelSelect = document.getElementById('insightsModelSelect');
+    const insightsCostNote = document.getElementById('insightsCostNote');
     const insightsPanel = document.getElementById('insightsPanel');
     const insightsMeta = document.getElementById('insightsMeta');
     const insightsBody = document.getElementById('insightsBody');
@@ -4178,7 +4239,7 @@ function renderSnapshotCatalog() {
       {
         target: '#insightsTrigger',
         title: 'Gemini 인사이트',
-        body: '이 아이콘을 누르면 선택한 기간과 페이지의 모든 클릭 요소, 위치, GA4 데이터를 Gemini로 요약합니다. 결과 아래에서 추가 질문을 이어갈 수 있고, 하단 경계선을 위아래로 드래그해 높이를 조절할 수 있습니다.',
+        body: '이 아이콘을 누른 뒤 Flash 또는 Pro 모델을 선택해 인사이트를 생성합니다. 기본값은 저렴한 Flash이며, Pro 선택 시 약 US$1의 비용 안내가 표시됩니다. 결과 아래에서 추가 질문을 이어갈 수 있습니다.',
       },
       {
         target: '.toolbar-actions',
@@ -4220,6 +4281,7 @@ function renderSnapshotCatalog() {
     let ga4RequestId = 0;
     let ga4RefreshTimer = null;
     let insightsRequestId = 0;
+    let insightsPanelOpen = false;
     let followUpRequestId = 0;
     let followUpConversation = [];
     let followUpState = { state: 'idle', message: '' };
@@ -4335,14 +4397,15 @@ function renderSnapshotCatalog() {
         for (const record of periodRecords) collapsedGroups.add(groupIdForAction(record.ga_action));
         renderPeriodRows();
       });
-      insightsTopButton.addEventListener('click', requestGeminiInsights);
-      insightsTrigger.addEventListener('click', requestGeminiInsights);
+      insightsTopButton.addEventListener('click', openGeminiInsights);
+      insightsTrigger.addEventListener('click', openGeminiInsights);
       insightsHintClose.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
         dismissGeminiHint();
       });
       insightsButton.addEventListener('click', requestGeminiInsights);
+      insightsModelSelect.addEventListener('change', handleGeminiModelChange);
       followUpForm.addEventListener('submit', (event) => {
         event.preventDefault();
         requestGeminiFollowUp();
@@ -4742,7 +4805,31 @@ function renderSnapshotCatalog() {
 
     function resetGeminiInsights(hasRuns) {
       insightsRequestId += 1;
+      insightsPanelOpen = false;
       resetFollowUpConversation();
+      insightsStatus = {
+        state: hasRuns ? 'idle' : 'disabled',
+        message: hasRuns ? '생성 전' : '선택 기간에 저장된 데이터가 없습니다.',
+        cached: false,
+        insight: null,
+      };
+      renderGeminiInsights();
+    }
+
+    function openGeminiInsights() {
+      if (insightsStatus.state === 'disabled') return;
+      insightsPanelOpen = true;
+      dismissGeminiHint();
+      renderGeminiInsights();
+      insightsPanel.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      window.requestAnimationFrame(() => insightsModelSelect.focus());
+    }
+
+    function handleGeminiModelChange() {
+      insightsRequestId += 1;
+      insightsPanelOpen = true;
+      resetFollowUpConversation();
+      const hasRuns = getSelectedRuns(targetSelect.value).length > 0;
       insightsStatus = {
         state: hasRuns ? 'idle' : 'disabled',
         message: hasRuns ? '생성 전' : '선택 기간에 저장된 데이터가 없습니다.',
@@ -4756,6 +4843,7 @@ function renderSnapshotCatalog() {
       const targetId = targetSelect.value;
       const startDate = startDateInput.value;
       const endDate = endDateInput.value;
+      const model = insightsModelSelect.value;
       const runs = getSelectedRuns(targetId);
       if (!runs.length) {
         resetGeminiInsights(false);
@@ -4774,18 +4862,20 @@ function renderSnapshotCatalog() {
         return;
       }
 
+      insightsPanelOpen = true;
       const requestId = ++insightsRequestId;
       insightsStatus = {
         state: 'loading',
         message: 'Gemini 분석 중',
         cached: false,
+        modelProfile: model,
         insight: null,
       };
       renderGeminiInsights();
       insightsPanel.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 
       try {
-        const params = new URLSearchParams({ targetId, startDate, endDate });
+        const params = new URLSearchParams({ targetId, startDate, endDate, model });
         const response = await fetch('../api/ai-insights?' + params.toString(), {
           method: 'GET',
           cache: 'no-store',
@@ -4804,6 +4894,8 @@ function renderSnapshotCatalog() {
           cached: Boolean(payload.cached),
           generatedAt: payload.generatedAt || '',
           model: payload.model || '',
+          modelProfile: payload.modelProfile || model,
+          modelLabel: payload.modelLabel || geminiModelLabel(model),
           summary: payload.summary || {},
           insight: payload.insight || {},
         };
@@ -4827,14 +4919,20 @@ function renderSnapshotCatalog() {
         insightsStatus.state === 'disabled' ||
         followUpState.state === 'loading';
       insightsButton.disabled = isBusyOrDisabled;
+      insightsModelSelect.disabled =
+        insightsStatus.state === 'loading' ||
+        insightsStatus.state === 'disabled' ||
+        followUpState.state === 'loading';
       insightsTopButton.disabled = isBusyOrDisabled;
       insightsTrigger.disabled = isBusyOrDisabled;
-      const showGeminiHint = insightsStatus.state === 'idle' && !geminiHintDismissed;
+      insightsCostNote.hidden = insightsModelSelect.value !== 'pro';
+      const showGeminiHint = insightsStatus.state === 'idle' && !insightsPanelOpen && !geminiHintDismissed;
       insightsHint.hidden = !showGeminiHint;
       if (showGeminiHint) window.requestAnimationFrame(positionGeminiHint);
 
       if (insightsStatus.state === 'disabled') {
         insightsPanel.hidden = true;
+        insightsResizer.hidden = true;
         insightsButton.textContent = '생성';
         insightsMeta.textContent = insightsStatus.message;
         insightsBody.hidden = true;
@@ -4844,9 +4942,11 @@ function renderSnapshotCatalog() {
       }
 
       if (insightsStatus.state === 'idle') {
-        insightsPanel.hidden = true;
+        insightsPanel.hidden = !insightsPanelOpen;
+        insightsResizer.hidden = true;
         insightsButton.textContent = '생성';
-        insightsMeta.textContent = '선택한 기간과 페이지 기준으로 생성합니다.';
+        insightsMeta.textContent =
+          geminiModelLabel(insightsModelSelect.value) + '로 선택한 기간과 페이지를 분석합니다.';
         insightsBody.hidden = true;
         insightsContent.innerHTML = '';
         insightsChat.hidden = true;
@@ -4854,11 +4954,15 @@ function renderSnapshotCatalog() {
       }
 
       insightsPanel.hidden = false;
+      insightsResizer.hidden = false;
       applyInsightsHeight();
 
       if (insightsStatus.state === 'loading') {
         insightsButton.textContent = '생성 중';
-        insightsMeta.textContent = '모든 클릭 요소, 위치, 유지기간, GA4 데이터를 압축해 Gemini 3.1 Pro에 전달 중입니다.';
+        insightsMeta.textContent =
+          '모든 클릭 요소, 위치, 유지기간, GA4 데이터를 압축해 ' +
+          geminiModelLabel(insightsStatus.modelProfile || insightsModelSelect.value) +
+          '에 전달 중입니다.';
         insightsBody.hidden = false;
         insightsContent.innerHTML = '<p class="insights-status">Gemini가 인사이트를 생성하고 있습니다.</p>';
         insightsChat.hidden = true;
@@ -4877,11 +4981,17 @@ function renderSnapshotCatalog() {
       insightsButton.textContent = '보기';
       const generated = insightsStatus.generatedAt ? formatDateTime(insightsStatus.generatedAt) : '';
       const cacheText = insightsStatus.cached ? '캐시됨' : '새로 생성됨';
-      const modelText = insightsStatus.model ? ' · ' + insightsStatus.model : '';
+      const modelText = insightsStatus.modelLabel || insightsStatus.model
+        ? ' · ' + (insightsStatus.modelLabel || insightsStatus.model)
+        : '';
       insightsMeta.textContent = cacheText + (generated ? ' · ' + generated : '') + modelText;
       insightsBody.hidden = false;
       insightsContent.innerHTML = renderInsightContent(insightsStatus.insight, insightsStatus.summary);
       renderFollowUpChat();
+    }
+
+    function geminiModelLabel(model) {
+      return model === 'pro' ? 'Gemini 3.1 Pro' : 'Gemini 3 Flash';
     }
 
     async function requestGeminiFollowUp() {
@@ -4900,6 +5010,7 @@ function renderSnapshotCatalog() {
       const targetId = targetSelect.value;
       const startDate = startDateInput.value;
       const endDate = endDateInput.value;
+      const model = insightsStatus.modelProfile || insightsModelSelect.value;
       followUpConversation.push({ id: messageId, role: 'user', content: question });
       followUpInput.value = '';
       followUpState = { state: 'loading', message: 'Gemini가 답변을 만들고 있습니다.' };
@@ -4915,7 +5026,7 @@ function renderSnapshotCatalog() {
             Accept: 'application/json',
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ targetId, startDate, endDate, question, history }),
+          body: JSON.stringify({ targetId, startDate, endDate, question, history, model }),
         });
         const payload = await readGeminiApiPayload(response);
         if (requestId !== followUpRequestId) return;
@@ -4928,7 +5039,7 @@ function renderSnapshotCatalog() {
           role: 'assistant',
           response: payload.response || {},
           cached: Boolean(payload.cached),
-          model: payload.model || '',
+          model: payload.modelLabel || payload.model || '',
         });
         followUpState = {
           state: 'ok',
@@ -5101,12 +5212,18 @@ function renderSnapshotCatalog() {
     function renderInsightContent(insight = {}, summary = {}) {
       const sections = [
         ['핵심 요약', insight.summary],
+        ['탐색 접점 분석', insight.journeyInsights],
         ['UX 인사이트', insight.uxInsights],
+        ['콘텐츠·프로모션 인사이트', insight.contentInsights],
         ['수치 인사이트', insight.metricInsights],
         ['콘텐츠 영역 인사이트', insight.sectionInsights],
+        ['측정·태깅 인사이트', insight.measurementInsights],
+        ['대안 해석과 추가 데이터', insight.alternativeInterpretations],
         ['변화 포인트', insight.changes],
         ['주의사항', insight.watchouts],
-        ['액션 제안', insight.actionItems],
+        ['개선사항', insight.improvementIdeas],
+        ['실험·검증 제안', insight.experimentIdeas],
+        ['다음 실행 항목', insight.actionItems],
       ];
       const summaryText = summary.elementCount
         ? '<small>' + escapeHtml(String(summary.elementCount)) + ' elements · ' +
