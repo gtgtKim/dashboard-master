@@ -3,22 +3,23 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { makeGa4MetricKey, queryGa4Metrics } from './ga4-data-api.mjs';
+import { getSktPageConfig, isExcludedSktGaAction } from './skt-page-config.mjs';
 import { canonicalTrackingBase } from './skt-tracking-normalization.mjs';
 
 const SNAPSHOTS_ROOT = path.resolve('snapshots');
-const INPUT_SCHEMA_VERSION = 'compact-observations-v2';
+const INPUT_SCHEMA_VERSION = 'compact-observations-v3-area';
 const PROMPT_INSTRUCTIONS = Object.freeze([
   '너는 GA4, 이커머스/통신 상품 UX, 콘텐츠 전략, 측정 설계를 함께 보는 시니어 한국어 데이터 분석가다.',
-  '분석 대상은 SKT의 T world Shop 한국 메인페이지이며, PC는 shop.tworld.co.kr/shop/main, MO는 m.shop.tworld.co.kr/shop/main 데이터다.',
-  '아래 JSON만 근거로 T world Shop 메인페이지 인사이트를 작성해라.',
+  '분석 대상은 SKT의 T world Shop 한국 웹사이트이며 메인 또는 등록된 기획전 PC/MO 페이지 데이터다. 실제 대상 URL과 페이지 유형은 아래 JSON의 page를 우선해라.',
+  '아래 JSON만 근거로 선택된 T world Shop 페이지 인사이트를 작성해라.',
   '데이터에 없는 사실, 판매 성과, 가입 전환, 구매 의도, 선호도, 원인 단정은 추측하지 마라.',
   '관찰된 사실, 가능한 해석, 제안사항을 명확히 구분해라. 분석 문장은 [관찰], 대안 해석은 [가설], 개선안은 [제안] 성격이 드러나게 작성해라.',
-  '해석이나 제안에는 반드시 근거가 된 ga_action/ga_label과 수치 또는 위치/기간 정보를 함께 적어라. 근거가 부족하면 항목 수를 억지로 채우지 마라.',
+  '해석이나 제안에는 반드시 근거가 된 ga_action/ga_area/ga_label과 수치 또는 위치/기간 정보를 함께 적어라. ga_area가 없는 요소는 빈 값으로 취급한다. 근거가 부족하면 항목 수를 억지로 채우지 마라.',
   '분석을 하나의 결론에 몰아가지 말고 독립된 탐색 접점, UX/정보구조, 콘텐츠/프로모션, GA4 성과, 태깅/측정 품질, 운영/기간 변화 관점을 각각 검토해라.',
   '서로 다른 해석이 가능한 현상은 대안 해석과 이를 구분하기 위해 필요한 추가 데이터를 함께 제시해라.',
-  'ga_action은 콘텐츠 영역 또는 컴포넌트 묶음, ga_label은 클릭 가능한 요소의 라벨로 해석하되 내부 태깅명일 수 있음을 감안해라.',
+  'ga_action은 콘텐츠 영역 또는 컴포넌트 묶음, 선택 값인 ga_area는 그 안의 세부 영역, ga_label은 클릭 가능한 요소의 라벨로 해석하되 내부 태깅명일 수 있음을 감안해라.',
   '유지기간은 데이터 조회 기간 안에서 관찰된 기간이다. 유지기간 시작일을 실제 사이트 최초 노출일처럼 표현하지 마라.',
-  '메인 배너, 최상단 띠배너, 휴대폰 구매/추천, 요금제/나만의 꿀 요금제, 이벤트/혜택처럼 ga_action별 콘텐츠 영역을 반드시 비교해라.',
+  'page.pageType과 실제 ga_action에 맞는 콘텐츠 영역을 비교해라. 메인 전용 영역이나 기획전 전용 영역이 데이터에 없으면 억지로 언급하지 마라.',
   'rolling 배너나 carousel 요소는 offscreen으로 캡처될 수 있다. offscreen/hidden/inViewport 값만 보고 실제 사용자 노출 여부나 스와이프 행동을 단정하지 말고 해석 주의사항으로 다뤄라.',
   '오늘 날짜가 포함된 조회는 GA4 데이터가 지연될 수 있다. 수치가 낮거나 불완전해 보이면 확정 데이터 여부를 주의사항으로 남겨라.',
   'eventCount는 클릭량이지 노출수나 클릭률이 아니다. 노출 데이터 없이 CTR, 주목도, 도달률을 계산하거나 단정하지 마라.',
@@ -71,9 +72,9 @@ const PROMPT_OUTPUT_SCHEMA = Object.freeze({
   actionItems: ['[제안] 담당자가 바로 확인하거나 실행할 수 있는 다음 단계 3~5개'],
 });
 const FOLLOW_UP_INSTRUCTIONS = Object.freeze([
-  '너는 SKT T world Shop 메인페이지 대시보드의 후속 질문에 답하는 한국어 데이터 분석가다.',
+  '너는 SKT T world Shop 페이지 대시보드의 후속 질문에 답하는 한국어 데이터 분석가다.',
   'analysis가 원본 근거이고 originalInsight는 앞서 생성한 요약이다. 두 값이 충돌하면 analysis를 우선해라.',
-  '질문에 직접 답하고, 관련 ga_action/ga_label, GA4 수치, 유지기간, 요소 위치를 가능한 한 구체적으로 제시해라.',
+  '질문에 직접 답하고, 관련 ga_action/ga_area/ga_label, GA4 수치, 유지기간, 요소 위치를 가능한 한 구체적으로 제시해라.',
   '유지기간은 조회 기간 안에서 관찰된 구간일 뿐 실제 서비스의 최초 또는 최종 노출일이 아님을 지켜라.',
   '캐러셀의 hidden/offscreen/inViewport 값만으로 실제 노출이나 스와이프 행동을 단정하지 마라.',
   '데이터에 없는 전환, 매출, 구매 의도, 선호도, 원인을 추측하지 마라.',
@@ -291,23 +292,25 @@ async function buildInsightInput({ targetId, startDate, endDate }) {
   const latestRun = selectedRuns.at(-1);
   const latestTarget = getTarget(latestRun, targetId);
   const groups = buildGroups(records, ga4);
+  const pageConfig = getSktPageConfig(targetId);
+  const trackingFields = pageConfig.usesGaArea ? 'ga_action/ga_area/ga_label' : 'ga_action/ga_label';
 
   return {
     dashboardLogic: {
       purpose:
-        'T world Shop 메인페이지의 클릭 요소가 자주 바뀌고 각 요소의 ga_action/ga_label 및 GA4 성과를 파악하기 어려운 문제를 줄이기 위한 대시보드입니다.',
+        `T world Shop ${pageConfig.pageType === 'exhibition' ? '기획전' : '메인'} 페이지의 클릭 요소가 자주 바뀌고 각 요소의 ${trackingFields} 및 GA4 성과를 파악하기 어려운 문제를 줄이기 위한 대시보드입니다.`,
       snapshotRule:
-        '봇이 매일 오전 10시 Asia/Seoul 기준으로 PC/MO 메인페이지 HTML과 클릭 어트리뷰트 요소를 저장합니다. 팝업은 검사 대상에서 제외합니다.',
+        '봇이 매일 오전 10시 Asia/Seoul 기준으로 등록된 PC/MO 페이지 HTML과 클릭 어트리뷰트 요소를 저장합니다. 팝업은 검사 대상에서 제외합니다.',
       scopeRule:
-        '수집 대상은 GNB/푸터를 제외한 콘텐츠 영역의 ga_action/ga_label 요소입니다.',
+        `수집 대상은 GNB/푸터를 제외한 콘텐츠 영역의 ${trackingFields} 요소입니다. ga_area는 기획전에서만 사용하며 값이 없을 수 있습니다.`,
       periodRule:
-        '유지기간은 데이터 조회 기간 안에서 같은 ga_action/ga_label 조합이 발견되어 유지된 날짜 구간이며 YYYY-MM-DD ~ YYYY-MM-DD 형식입니다. 예를 들어 2026-06-29 ~ 2026-06-29는 선택한 데이터 조회 기간 안에서 그 요소가 2026-06-29에만 관찰되었다는 뜻이지, 실제 서비스에서 그 요소가 2026-06-29에 처음 노출되었다는 뜻이 아닙니다.',
+        `유지기간은 데이터 조회 기간 안에서 같은 ${trackingFields} 조합이 발견되어 유지된 날짜 구간이며 YYYY-MM-DD ~ YYYY-MM-DD 형식입니다. 예를 들어 2026-06-29 ~ 2026-06-29는 선택한 데이터 조회 기간 안에서 그 요소가 2026-06-29에만 관찰되었다는 뜻이지, 실제 서비스에서 그 요소가 2026-06-29에 처음 노출되었다는 뜻이 아닙니다.`,
       rowRule:
-        '표의 행은 같은 ga_action/ga_label 조합과 유지기간을 가진 요소를 병합할 수 있으며, observations.instances에는 병합된 실제 요소별 관찰 기간과 위치가 들어갑니다.',
+        `표의 행은 같은 ${trackingFields} 조합과 유지기간을 가진 요소를 병합할 수 있으며, observations.instances에는 병합된 실제 요소별 관찰 기간과 위치가 들어갑니다.`,
       previewRule:
         '기본 왼쪽 화면은 선택 기간 안의 최신 캡처본입니다. 최신 캡처본에 없는 요소를 선택하면 그 요소가 존재하던 기간의 최신 캡처본을 보여줍니다.',
       metricsRule:
-        'GA4 eventCount/session/user는 선택 기간과 페이지 기준으로 조회합니다. eventName=click, PC는 event_category=TWD_main, MO는 event_category=MTWD_main 및 hostName=m.shop.tworld.co.kr 조건입니다.',
+        `GA4 eventCount/session/user는 선택 기간과 페이지 기준으로 조회합니다. eventName=click, event_category=${pageConfig.eventCategory}${pageConfig.requireMobileHostname ? ', hostName=m.shop.tworld.co.kr' : ''}${pageConfig.usesGaArea ? ', event_area를 ga_area와 매칭' : ''} 조건입니다.`,
       aiRule:
         'AI는 제공된 JSON에 있는 숫자와 위치 정보만 근거로 분석해야 하며, 날짜별 중복 관찰은 요소별 기간과 위치 범위 및 중요한 변경점으로 압축됩니다.',
       aiEvidenceLimit:
@@ -322,6 +325,8 @@ async function buildInsightInput({ targetId, startDate, endDate }) {
       finalUrl: latestTarget?.finalUrl || '',
       targetId,
       targetLabel: latestTarget?.label || targetId,
+      pageType: pageConfig.pageType,
+      exhibitionId: pageConfig.exhibitionId || '',
       period: `${startDate} ~ ${endDate}`,
       days: selectedRuns.length,
       firstSnapshotDate: selectedRuns[0]?.date || '',
@@ -354,26 +359,29 @@ async function buildElementRecords(runs, targetId, ga4) {
     const identityCounts = new Map();
 
     for (const element of elements) {
+      if (isExcludedSktGaAction(targetId, element.ga_action)) continue;
       const canonical = canonicalTrackingBase({
         targetId,
         date: run.date,
         action: element.ga_action,
+        area: element.ga_area,
         label: element.ga_label,
         href: element.href,
       });
       const action = canonical.action;
+      const area = canonical.area;
       const label = canonical.label;
       const ordinal = (identityCounts.get(canonical.identity) || 0) + 1;
       identityCounts.set(canonical.identity, ordinal);
       const key = `${canonical.identity}|${ordinal}`;
-      const metricKey = makeGa4MetricKey(action, label);
+      const metricKey = makeGa4MetricKey(action, area, label);
       let record = recordsByKey.get(key);
 
       if (!record) {
         record = {
           key,
           metricKey,
-          tracking: { action, label },
+          tracking: { action, area, label },
           href: element.href || '',
           rawActions: new Set(),
           occurrences: [],

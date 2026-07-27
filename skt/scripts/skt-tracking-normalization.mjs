@@ -35,22 +35,23 @@ export function normalizeSktGaActionForRange({ targetId, startDate, endDate, act
   return correction?.canonicalAction || rawAction;
 }
 
-export function normalizeSktTracking({ targetId, date, action, label = '' }) {
+export function normalizeSktTracking({ targetId, date, action, area = '', label = '' }) {
   const rawAction = action || '(missing)';
   const canonicalAction = normalizeSktGaAction({ targetId, date, action: rawAction });
 
   return {
     action: canonicalAction,
+    area: area || '',
     label: label || '',
     rawAction,
     corrected: canonicalAction !== rawAction,
   };
 }
 
-export function canonicalTrackingBase({ targetId, date, action, label = '', href = '' }) {
-  const tracking = normalizeSktTracking({ targetId, date, action, label });
+export function canonicalTrackingBase({ targetId, date, action, area = '', label = '', href = '' }) {
+  const tracking = normalizeSktTracking({ targetId, date, action, area, label });
   return {
     ...tracking,
-    identity: [targetId, tracking.action, tracking.label, href || ''].join('|'),
+    identity: [targetId, tracking.action, tracking.area, tracking.label, href || ''].join('|'),
   };
 }

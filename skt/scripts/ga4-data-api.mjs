@@ -1,6 +1,7 @@
 import analyticsData from '@google-analytics/data';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { getSktPageConfig, usesGaAreaForTargetId } from './skt-page-config.mjs';
 import { normalizeSktGaActionForRange } from './skt-tracking-normalization.mjs';
 
 const { BetaAnalyticsDataClient } = analyticsData;
@@ -12,6 +13,7 @@ export const GA4_CONFIG = {
   dimensions: {
     eventCategory: process.env.GA4_DIMENSION_EVENT_CATEGORY || 'customEvent:event_category',
     eventAction: process.env.GA4_DIMENSION_EVENT_ACTION || 'customEvent:event_action',
+    eventArea: process.env.GA4_DIMENSION_EVENT_AREA || 'customEvent:event_area',
     eventLabel: process.env.GA4_DIMENSION_EVENT_LABEL || 'customEvent:event_label',
     hostname: process.env.GA4_DIMENSION_HOSTNAME || 'hostName',
   },
@@ -36,6 +38,7 @@ export async function queryGa4Metrics({ targetId, startDate, endDate }) {
   const client = getGa4Client(keyFilename);
   const eventCategory = ga4CategoryForTargetId(targetId);
   const hostname = ga4HostnameForTargetId(targetId);
+  const usesGaArea = usesGaAreaForTargetId(targetId);
   const dimensionFilter = {
     andGroup: {
       expressions: [
@@ -65,14 +68,16 @@ export async function queryGa4Metrics({ targetId, startDate, endDate }) {
   }
 
   const metricsSpec = [{ name: 'eventCount' }, { name: 'sessions' }, { name: 'activeUsers' }];
+  const reportDimensions = [
+    { name: GA4_CONFIG.dimensions.eventAction },
+    ...(usesGaArea ? [{ name: GA4_CONFIG.dimensions.eventArea }] : []),
+    { name: GA4_CONFIG.dimensions.eventLabel },
+  ];
   const [[response], [totalResponse]] = await Promise.all([
     client.runReport({
       property: `properties/${GA4_CONFIG.propertyId}`,
       dateRanges: [{ startDate, endDate }],
-      dimensions: [
-        { name: GA4_CONFIG.dimensions.eventAction },
-        { name: GA4_CONFIG.dimensions.eventLabel },
-      ],
+      dimensions: reportDimensions,
       metrics: metricsSpec,
       dimensionFilter,
       limit: 250000,
@@ -88,14 +93,17 @@ export async function queryGa4Metrics({ targetId, startDate, endDate }) {
   const metrics = {};
 
   for (const row of response.rows || []) {
-    const [action = '', label = ''] = (row.dimensionValues || []).map((value) => value.value || '');
+    const dimensionValues = (row.dimensionValues || []).map((value) => normalizeGa4Dimension(value.value));
+    const action = dimensionValues[0] || '';
+    const area = usesGaArea ? dimensionValues[1] || '' : '';
+    const label = dimensionValues[usesGaArea ? 2 : 1] || '';
     const canonicalAction = normalizeSktGaActionForRange({
       targetId,
       startDate,
       endDate,
       action: action || '(missing)',
     });
-    const key = makeGa4MetricKey(canonicalAction, label);
+    const key = makeGa4MetricKey(canonicalAction, area, label);
     const rowMetrics = {
       eventCount: numberFromMetric(row.metricValues?.[0]?.value),
       sessions: numberFromMetric(row.metricValues?.[1]?.value),
@@ -121,6 +129,7 @@ export async function queryGa4Metrics({ targetId, startDate, endDate }) {
     startDate,
     endDate,
     targetId,
+    usesGaArea,
     metrics,
     totals,
     rowCount: response.rows?.length || 0,
@@ -138,15 +147,23 @@ export async function findGa4CredentialFile() {
 }
 
 export function ga4CategoryForTargetId(targetId) {
-  return String(targetId).includes('mobile') ? 'MTWD_main' : 'TWD_main';
+  return getSktPageConfig(targetId).eventCategory;
 }
 
 export function ga4HostnameForTargetId(targetId) {
-  return String(targetId).includes('mobile') ? GA4_CONFIG.mobileHostname : null;
+  return getSktPageConfig(targetId).requireMobileHostname ? GA4_CONFIG.mobileHostname : null;
 }
 
-export function makeGa4MetricKey(action, label) {
-  return `${encodeURIComponent(action || '(missing)')}::${encodeURIComponent(label || '')}`;
+export function makeGa4MetricKey(action, area, label) {
+  if (label === undefined) {
+    label = area;
+    area = '';
+  }
+
+  const encodedAction = encodeURIComponent(action || '(missing)');
+  const encodedLabel = encodeURIComponent(label || '');
+  if (!area) return `${encodedAction}::${encodedLabel}`;
+  return `${encodedAction}::${encodeURIComponent(area)}::${encodedLabel}`;
 }
 
 export function emptyGa4Metrics() {
@@ -172,6 +189,12 @@ function sumGa4Metrics(left = emptyGa4Metrics(), right = emptyGa4Metrics()) {
     sessions: Number(left.sessions || 0) + Number(right.sessions || 0),
     activeUsers: Number(left.activeUsers || 0) + Number(right.activeUsers || 0),
   };
+}
+
+function normalizeGa4Dimension(value) {
+  const normalized = String(value || '').trim();
+  if (/^\((?:not set|not provided|not available)\)$/i.test(normalized)) return '';
+  return normalized;
 }
 
 function validateDate(value, name) {

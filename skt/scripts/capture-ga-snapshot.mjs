@@ -4,6 +4,12 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import sharp from 'sharp';
 import { GA4_CONFIG, makeGa4MetricKey } from './ga4-data-api.mjs';
+import {
+  getSktPageConfig,
+  isExcludedSktGaAction,
+  SKT_PAGE_CONFIGS,
+  usesGaAreaForTargetId,
+} from './skt-page-config.mjs';
 import { SKT_TRACKING_CORRECTIONS } from './skt-tracking-normalization.mjs';
 
 const OUTPUT_ROOT = path.resolve('snapshots');
@@ -11,32 +17,25 @@ const RUN_ID = process.env.RUN_ID || timestampForPath(new Date());
 const RUN_DIR = path.join(OUTPUT_ROOT, RUN_ID);
 const REBUILD_CATALOG_ONLY = process.argv.includes('--rebuild-catalog');
 
-const targets = [
-  {
-    id: 'mobile-main',
-    label: 'T world Shop Mobile Main',
-    url: 'https://m.shop.tworld.co.kr/shop/main',
-    context: {
-      ...devices['iPhone 13'],
-      deviceScaleFactor: 1,
-      locale: 'ko-KR',
-      timezoneId: 'Asia/Seoul',
-    },
-  },
-  {
-    id: 'pc-main',
-    label: 'T world Shop PC Main',
-    url: 'https://shop.tworld.co.kr/shop/main',
-    context: {
-      viewport: { width: 1440, height: 1100 },
-      deviceScaleFactor: 1,
-      locale: 'ko-KR',
-      timezoneId: 'Asia/Seoul',
-      userAgent:
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-    },
-  },
-];
+const targets = SKT_PAGE_CONFIGS.map((config) => ({
+  ...config,
+  context:
+    config.device === 'mobile'
+      ? {
+          ...devices['iPhone 13'],
+          deviceScaleFactor: 1,
+          locale: 'ko-KR',
+          timezoneId: 'Asia/Seoul',
+        }
+      : {
+          viewport: { width: 1440, height: 1100 },
+          deviceScaleFactor: 1,
+          locale: 'ko-KR',
+          timezoneId: 'Asia/Seoul',
+          userAgent:
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+        },
+}));
 
 if (REBUILD_CATALOG_ONLY) {
   await rebuildSnapshotCatalog(OUTPUT_ROOT);
@@ -168,12 +167,14 @@ async function captureTarget(browserInstance, target) {
     await dismissPopups(page);
     await page.evaluate(() => window.scrollTo(0, 0));
     await page.waitForTimeout(1_000);
+    await annotateStaticToggleControls(page, target);
+    await settleScrollAnimatedContent(page, target);
     await freezePageMotion(page);
   } catch (error) {
     loadError = error instanceof Error ? error.message : String(error);
   }
 
-  const collected = await collectGaElements(page, target.id);
+  const collected = await collectGaElements(page, target);
   const pageMeta = await page.evaluate(() => ({
     title: document.title,
     url: location.href,
@@ -230,6 +231,9 @@ async function captureTarget(browserInstance, target) {
     id: target.id,
     label: target.label,
     url: target.url,
+    pageType: target.pageType,
+    eventCategory: target.eventCategory,
+    usesGaArea: target.usesGaArea,
     finalUrl: snapshot.finalUrl,
     title: snapshot.title,
     outputDir,
@@ -353,6 +357,235 @@ async function autoScroll(page) {
   await page.waitForTimeout(1_000);
 }
 
+async function settleScrollAnimatedContent(page, target) {
+  await page.evaluate(async ({ includedFixedActions }) => {
+    const animatedElements = Array.from(document.querySelectorAll('[data-aos]'));
+
+    for (const element of animatedElements) {
+      element.classList.add('aos-init', 'aos-animate');
+    }
+
+    promoteLazyImageAttributes(document);
+    revealIncludedFixedActions(includedFixedActions);
+
+    await new Promise((resolve) => {
+      window.requestAnimationFrame(() => window.requestAnimationFrame(resolve));
+    });
+
+    await Promise.allSettled(
+      Array.from(document.images).map(async (image) => {
+        if (image.complete && image.naturalWidth > 0) return;
+
+        await Promise.race([
+          typeof image.decode === 'function' ? image.decode() : Promise.resolve(),
+          new Promise((resolve) => window.setTimeout(resolve, 2_000)),
+        ]);
+      }),
+    );
+
+    function promoteLazyImageAttributes(root) {
+      const imageSourceAttributes = ['data-src', 'data-lazy-src', 'data-original'];
+      const imageSrcsetAttributes = ['data-srcset', 'data-lazy-srcset'];
+
+      root.querySelectorAll('img').forEach((image) => {
+        const source = imageSourceAttributes.map((name) => image.getAttribute(name)).find(Boolean);
+        const currentSource = image.getAttribute('src') || '';
+        if (source && (!currentSource || currentSource.startsWith('data:image/'))) {
+          image.setAttribute('src', source);
+        }
+
+        if (!image.getAttribute('srcset')) {
+          const srcset = imageSrcsetAttributes.map((name) => image.getAttribute(name)).find(Boolean);
+          if (srcset) image.setAttribute('srcset', srcset);
+        }
+      });
+
+      root.querySelectorAll('source').forEach((source) => {
+        if (source.getAttribute('srcset')) return;
+        const srcset = imageSrcsetAttributes.map((name) => source.getAttribute(name)).find(Boolean);
+        if (srcset) source.setAttribute('srcset', srcset);
+      });
+    }
+
+    function revealIncludedFixedActions(actions) {
+      const allowedActions = new Set(actions);
+      if (!allowedActions.size) return;
+
+      document.querySelectorAll('[ga_action]').forEach((element) => {
+        const action = element.getAttribute('ga_action') || '';
+        if (!allowedActions.has(action)) return;
+
+        const computedStyle = window.getComputedStyle(element);
+        const computedDisplay = computedStyle.display;
+        const measuredHeight = element.getBoundingClientRect().height;
+        const verticalInsets =
+          Number.parseFloat(computedStyle.paddingTop || '0') +
+          Number.parseFloat(computedStyle.paddingBottom || '0') +
+          Number.parseFloat(computedStyle.borderTopWidth || '0') +
+          Number.parseFloat(computedStyle.borderBottomWidth || '0');
+        element.removeAttribute('hidden');
+        element.setAttribute('data-ga-snapshot-fixed-visible', 'true');
+        element.style.setProperty('display', computedDisplay === 'none' ? 'block' : computedDisplay, 'important');
+        element.style.setProperty('visibility', 'visible', 'important');
+        element.style.setProperty('opacity', '1', 'important');
+        if (measuredHeight > 0) {
+          element.style.setProperty('min-height', `${Math.max(0, measuredHeight - verticalInsets)}px`, 'important');
+        }
+      });
+    }
+  }, {
+    includedFixedActions: target.includedFixedActions || [],
+  });
+
+  await page.waitForTimeout(300);
+}
+
+async function annotateStaticToggleControls(page, target) {
+  await page.evaluate(async ({ includedFixedActions }) => {
+    const contentRoot =
+      document.querySelector('main') ||
+      document.querySelector('#content') ||
+      document.querySelector('#contents') ||
+      document.querySelector('.content') ||
+      document.querySelector('.contents') ||
+      document.querySelector('#container') ||
+      document.querySelector('.container') ||
+      document.body;
+    const allowedFixedActions = new Set(includedFixedActions);
+    const controls = Array.from(document.querySelectorAll('[aria-controls], .btn-counsel-toggle'))
+      .map((control, index) => {
+        const actionElement = control.closest('[ga_action]');
+        const allowedFixed = allowedFixedActions.has(actionElement?.getAttribute('ga_action') || '');
+        if (!contentRoot.contains(control) && !allowedFixed) return null;
+        if (
+          !control.matches('[data-toggle-btn], .q, .btn-counsel-toggle') &&
+          !allowedFixed &&
+          !findTrackingAreaHolder(control)
+        ) {
+          return null;
+        }
+        if (control.closest('header,footer,nav,[id*="popup" i]')) return null;
+
+        let controlled = null;
+        const controlledId = control.getAttribute('aria-controls') || '';
+        if (controlledId) controlled = document.getElementById(controlledId);
+
+        if (!controlled && control.matches('.btn-counsel-toggle')) {
+          controlled = control.closest('.sticky-shortcut')?.querySelector('.shortcut-menus') || null;
+          if (controlled) {
+            if (!controlled.id) controlled.id = `ga-snapshot-quick-menu-${index + 1}`;
+            control.setAttribute('aria-controls', controlled.id);
+          }
+        }
+
+        return controlled ? { control, controlled } : null;
+      })
+      .filter(Boolean);
+    const sleep = (milliseconds) => new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+    const originalScroll = { x: window.scrollX, y: window.scrollY };
+
+    for (const { control, controlled } of controls) {
+      const areaHolder = findTrackingAreaHolder(control);
+      const quickRoot = control.closest('.sticky-shortcut');
+      const quickDimmed = quickRoot?.nextElementSibling?.matches?.('.sticky-shortcut-dimmed')
+        ? quickRoot.nextElementSibling
+        : null;
+
+      const stateNodes = Array.from(
+        new Set([
+          control,
+          controlled,
+          areaHolder,
+          quickRoot,
+          quickDimmed,
+          control.parentElement,
+          control.parentElement?.parentElement,
+          control.closest('li'),
+          ...Array.from(control.parentElement?.querySelectorAll(':scope > .btn-toggle-img') || []),
+        ].filter(Boolean)),
+      );
+      const states = stateNodes.map((element) => ({
+        element,
+        className: element.getAttribute('class'),
+        style: element.getAttribute('style'),
+        hidden: element.hasAttribute('hidden'),
+        ariaExpanded: element.getAttribute('aria-expanded'),
+        title: element.getAttribute('title'),
+        gaArea: element.getAttribute('ga_area'),
+      }));
+      const initialDisplay = window.getComputedStyle(controlled).display;
+      const initialExpanded = initialDisplay !== 'none';
+      const initialArea = areaHolder?.getAttribute('ga_area') || '';
+      let expandedDisplay = initialDisplay === 'none' ? '' : initialDisplay;
+      let toggledArea = '';
+
+      if (!expandedDisplay) {
+        control.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+        await sleep(450);
+        const toggledDisplay = window.getComputedStyle(controlled).display;
+        if (toggledDisplay !== 'none') expandedDisplay = toggledDisplay;
+        toggledArea = areaHolder?.getAttribute('ga_area') || '';
+      } else {
+        control.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+        await sleep(450);
+        toggledArea = areaHolder?.getAttribute('ga_area') || '';
+      }
+
+      for (const state of states) {
+        restoreAttribute(state.element, 'class', state.className);
+        restoreAttribute(state.element, 'style', state.style);
+        restoreAttribute(state.element, 'aria-expanded', state.ariaExpanded);
+        restoreAttribute(state.element, 'title', state.title);
+        restoreAttribute(state.element, 'ga_area', state.gaArea);
+        if (state.hidden) state.element.setAttribute('hidden', '');
+        else state.element.removeAttribute('hidden');
+      }
+
+      control.setAttribute('data-ga-snapshot-toggle', 'true');
+      control.setAttribute('data-ga-snapshot-expanded-display', expandedDisplay || 'block');
+      control.setAttribute('data-ga-snapshot-initial-expanded', String(initialExpanded));
+      if (control.matches('.btn-counsel-toggle')) {
+        control.setAttribute('data-ga-snapshot-toggle-kind', 'quick-menu');
+      }
+
+      if (areaHolder && initialArea && toggledArea && initialArea !== toggledArea) {
+        const collapsedArea = initialExpanded ? toggledArea : initialArea;
+        const expandedArea = initialExpanded ? initialArea : toggledArea;
+        areaHolder.setAttribute('data-ga-snapshot-toggle-area-holder', 'true');
+        control.setAttribute('data-ga-snapshot-collapsed-area', collapsedArea);
+        control.setAttribute('data-ga-snapshot-expanded-area', expandedArea);
+      }
+      window.scrollTo(originalScroll.x, originalScroll.y);
+    }
+
+    function restoreAttribute(element, name, value) {
+      if (value === null) element.removeAttribute(name);
+      else element.setAttribute(name, value);
+    }
+
+    function findTrackingAreaHolder(control) {
+      const labelElement =
+        (control.matches('[ga_label]') ? control : null) ||
+        control.querySelector('[ga_label]') ||
+        control.closest('[ga_label]');
+      const actionElement = labelElement?.closest('[ga_action]') || control.closest('[ga_action]');
+      let current = labelElement || control;
+
+      while (current) {
+        if (current.hasAttribute?.('ga_area')) return current;
+        if (current === actionElement) break;
+        current = current.parentElement;
+      }
+
+      return null;
+    }
+  }, {
+    includedFixedActions: target.includedFixedActions || [],
+  });
+
+  await page.waitForTimeout(100);
+}
+
 async function freezePageMotion(page) {
   await page.evaluate(() => {
     document.querySelectorAll('.swiper, .swiper-container').forEach((element) => {
@@ -391,6 +624,11 @@ async function freezePageMotion(page) {
         animation-play-state: paused !important;
         transition-duration: 0s !important;
         scroll-behavior: auto !important;
+      }
+
+      [data-aos] {
+        opacity: 1 !important;
+        transform: none !important;
       }
     `;
     document.head.append(style);
@@ -795,12 +1033,14 @@ function groupElementsByAction(elements) {
 
 function renderStaticReviewShell({ target, pageMeta, contentHtml, elements }) {
   const isMobile = target.id.includes('mobile');
+  const usesGaArea = usesGaAreaForTargetId(target.id);
+  const trackingColumnCount = usesGaArea ? 3 : 2;
   const groups = groupElementsByAction(elements);
   const rows = groups
     .map(
       (group) => `
         <tr class="group-row" data-group-id="${escapeHtml(group.id)}">
-          <td colspan="3">
+          <td colspan="${trackingColumnCount}">
             <button class="group-toggle" type="button">
               <span class="group-state">[-]</span>
               <span>${escapeHtml(group.action)}</span>
@@ -815,8 +1055,8 @@ function renderStaticReviewShell({ target, pageMeta, contentHtml, elements }) {
                 item.periodKey || item.stableKey || '',
               )}" data-group-id="${escapeHtml(group.id)}">
                 <td><code>${escapeHtml(item.ga_action || '(missing)')}</code></td>
+                ${usesGaArea ? `<td><code>${escapeHtml(item.ga_area || '-')}</code></td>` : ''}
                 <td><code>${escapeHtml(item.ga_label)}</code></td>
-                <td>${item.href ? '<span class="href-pill">link</span>' : ''}</td>
               </tr>`,
           )
           .join('\n')}`,
@@ -1191,7 +1431,7 @@ function renderStaticReviewShell({ target, pageMeta, contentHtml, elements }) {
         </div>
       </div>
       <div class="toolbar">
-        <input id="filterInput" type="search" placeholder="ga_action, ga_label 검색">
+        <input id="filterInput" type="search" placeholder="GA 어트리뷰트 검색">
         <div class="toolbar-actions">
           <button id="expandAll" type="button">전체 펼치기</button>
           <button id="collapseAll" type="button">전체 접기</button>
@@ -1202,8 +1442,8 @@ function renderStaticReviewShell({ target, pageMeta, contentHtml, elements }) {
           <thead>
             <tr>
               <th>ga_action</th>
+              ${usesGaArea ? '<th>ga_area</th>' : ''}
               <th>ga_label</th>
-              <th>Href</th>
             </tr>
           </thead>
           <tbody>${rows}</tbody>
@@ -1232,6 +1472,8 @@ function renderStaticReviewShell({ target, pageMeta, contentHtml, elements }) {
     const isMobilePreview = ${isMobile ? 'true' : 'false'};
     const sourceViewportWidth = ${sourceViewportWidth};
     let highlightedElement = null;
+    let revealRestorers = [];
+    let revealedElements = new Set();
     let dragging = false;
     let activePointerId = null;
     const collapsedGroups = new Set();
@@ -1347,6 +1589,7 @@ function renderStaticReviewShell({ target, pageMeta, contentHtml, elements }) {
         const item = itemByIndex.get(row.dataset.index);
         const haystack = [
           item?.ga_action,
+          item?.ga_area,
           item?.ga_label,
           item?.href,
         ].filter(Boolean).join(' ').toLowerCase();
@@ -1412,6 +1655,7 @@ function renderStaticReviewShell({ target, pageMeta, contentHtml, elements }) {
       return items.find((item) => {
         if (payload.ga_label && item.ga_label !== payload.ga_label) return false;
         if (payload.ga_action && item.ga_action !== payload.ga_action) return false;
+        if (payload.ga_area && item.ga_area !== payload.ga_area) return false;
         if (payload.href && item.href !== payload.href) return false;
         return payload.ga_label || payload.ga_action || payload.href;
       });
@@ -1428,8 +1672,13 @@ function renderStaticReviewShell({ target, pageMeta, contentHtml, elements }) {
           event.preventDefault();
           event.stopPropagation();
 
+          const toggle = event.target.closest?.('[data-ga-snapshot-toggle][aria-controls]');
+          const nextExpanded = toggle ? toggleStaticControl(doc, toggle) : null;
           const item = findItemFromPreviewTarget(event.target);
           if (item) activateItem(item, { clearFilter: true, focusPreview: true });
+          if (toggle && nextExpanded !== null) {
+            setStaticControlState(doc, toggle, nextExpanded);
+          }
         },
         true,
       );
@@ -1437,30 +1686,150 @@ function renderStaticReviewShell({ target, pageMeta, contentHtml, elements }) {
       const style = doc.createElement('style');
       style.textContent = 'a, button, [role="button"], [ga_label] { cursor: pointer !important; }';
       doc.head?.append(style);
+      doc.querySelectorAll('[data-ga-snapshot-toggle][aria-controls]').forEach(ensureToggleStacking);
+    }
+
+    function toggleStaticControl(doc, control) {
+      const controlledId = control.getAttribute('aria-controls') || '';
+      const controlled = controlledId ? doc.getElementById(controlledId) : null;
+      if (!controlled) return null;
+
+      const expanded = doc.defaultView.getComputedStyle(controlled).display !== 'none';
+      const nextExpanded = !expanded;
+      setStaticControlState(doc, control, nextExpanded);
+      return nextExpanded;
+    }
+
+    function setStaticControlState(doc, control, nextExpanded) {
+      const controlledId = control.getAttribute('aria-controls') || '';
+      const controlled = controlledId ? doc.getElementById(controlledId) : null;
+      if (!controlled) return;
+
+      rememberElementState(control);
+      rememberElementState(controlled);
+      control.setAttribute('aria-expanded', String(nextExpanded));
+      controlled.style.display = nextExpanded
+        ? control.getAttribute('data-ga-snapshot-expanded-display') || 'block'
+        : 'none';
+      ensureToggleStacking(control);
+
+      const listItem = control.closest('li');
+      if (control.matches('.q') && listItem) {
+        listItem.classList.toggle('on', nextExpanded);
+        control.title = nextExpanded ? '닫기' : '열기';
+      }
+
+      if (control.hasAttribute('data-toggle-btn')) {
+        const images = Array.from(control.parentElement?.querySelectorAll(':scope > .btn-toggle-img') || []);
+        images.forEach((image, index) => {
+          image.style.display = index === (nextExpanded ? 1 : 0) ? 'block' : 'none';
+        });
+      }
+
+      const areaHolder = findToggleAreaHolder(control);
+      const nextArea = control.getAttribute(
+        nextExpanded ? 'data-ga-snapshot-expanded-area' : 'data-ga-snapshot-collapsed-area',
+      );
+      if (areaHolder && nextArea) {
+        rememberElementState(areaHolder);
+        areaHolder.setAttribute('ga_area', nextArea);
+      }
+
+      if (control.getAttribute('data-ga-snapshot-toggle-kind') === 'quick-menu') {
+        const quickRoot = control.closest('.sticky-shortcut');
+        const dimmed = quickRoot?.nextElementSibling?.matches?.('.sticky-shortcut-dimmed')
+          ? quickRoot.nextElementSibling
+          : null;
+        if (quickRoot) {
+          rememberElementState(quickRoot);
+          quickRoot.classList.toggle('active', nextExpanded);
+        }
+        if (dimmed) {
+          rememberElementState(dimmed);
+          dimmed.style.display = nextExpanded ? 'block' : 'none';
+        }
+      }
+    }
+
+    function syncToggleStateForItem(doc, target, item) {
+      if (!item?.toggleState) return;
+      const control =
+        target.closest?.('[data-ga-snapshot-toggle]') ||
+        target.querySelector?.('[data-ga-snapshot-toggle]');
+      if (!control) return;
+      setStaticControlState(doc, control, item.toggleState === 'expanded');
+    }
+
+    function findToggleAreaHolder(control) {
+      const nestedHolder = control.querySelector?.('[data-ga-snapshot-toggle-area-holder]');
+      if (nestedHolder) return nestedHolder;
+
+      let current = control;
+      const actionElement = control.closest('[ga_action]');
+      while (current) {
+        if (current.hasAttribute?.('data-ga-snapshot-toggle-area-holder')) return current;
+        if (current === actionElement) break;
+        current = current.parentElement;
+      }
+      return null;
+    }
+
+    function ensureToggleStacking(control) {
+      const parent = control.parentElement;
+      if (!parent) return;
+
+      if (parent.ownerDocument.defaultView.getComputedStyle(parent).position === 'static') {
+        parent.style.position = 'relative';
+      }
+      parent.style.zIndex = '2';
     }
 
     function findItemFromPreviewTarget(target) {
       if (!target || typeof target.closest !== 'function') return null;
 
+      const labelElement = target.closest('[ga_label]');
+      const actionElement = labelElement?.closest('[ga_action]') || null;
+      const payload = labelElement
+        ? {
+            ga_label: labelElement.getAttribute('ga_label') || '',
+            ga_action: actionElement?.getAttribute('ga_action') || null,
+            ga_area: findGaArea(labelElement, actionElement),
+            href: labelElement.closest('a[href]')?.href || null,
+          }
+        : null;
       const idElement = target.closest('[data-ga-snapshot-id]');
       const snapshotId = idElement?.getAttribute('data-ga-snapshot-id');
-      if (snapshotId && itemBySnapshotId.has(snapshotId)) return itemBySnapshotId.get(snapshotId);
-
       const highlightElement = target.closest('[data-ga-highlight-ids]');
-      const highlightIds = (highlightElement?.getAttribute('data-ga-highlight-ids') || '').split(/\\s+/).filter(Boolean);
+      const highlightIds = [
+        snapshotId,
+        ...(highlightElement?.getAttribute('data-ga-highlight-ids') || '').split(/\\s+/),
+      ].filter(Boolean);
+      const highlightedItems = highlightIds.map((id) => itemBySnapshotId.get(id)).filter(Boolean);
+      const exactStateItem = payload
+        ? highlightedItems.find(
+            (item) =>
+              item.ga_label === payload.ga_label &&
+              item.ga_action === payload.ga_action &&
+              item.ga_area === payload.ga_area,
+          )
+        : null;
+      if (exactStateItem) return exactStateItem;
+
       for (const highlightId of highlightIds) {
         if (itemBySnapshotId.has(highlightId)) return itemBySnapshotId.get(highlightId);
       }
 
-      const labelElement = target.closest('[ga_label]');
-      if (!labelElement) return null;
+      return payload ? findItemFromPayload(payload) : null;
+    }
 
-      const gaLabel = labelElement.getAttribute('ga_label') || '';
-      const gaAction = labelElement.closest('[ga_action]')?.getAttribute('ga_action') || null;
-      const anchor = labelElement.closest('a[href]');
-      const href = anchor?.href || null;
-
-      return findItemFromPayload({ ga_label: gaLabel, ga_action: gaAction, href });
+    function findGaArea(labelElement, actionElement) {
+      let current = labelElement;
+      while (current) {
+        if (current.hasAttribute?.('ga_area')) return (current.getAttribute('ga_area') || '').trim();
+        if (current === actionElement) break;
+        current = current.parentElement;
+      }
+      return '';
     }
 
     function focusInPreview(item) {
@@ -1469,8 +1838,10 @@ function renderStaticReviewShell({ target, pageMeta, contentHtml, elements }) {
 
       const target = findTarget(doc, item);
       if (!target) return;
+      resetPreviewContext(doc);
       revealTargetContext(target);
       revealHiddenContext(target);
+      syncToggleStateForItem(doc, target, item);
       const highlightTarget = resolveHighlightTarget(doc, target);
 
       highlightTarget.scrollIntoView({ block: 'center', inline: 'center', behavior: 'auto' });
@@ -1514,11 +1885,15 @@ function renderStaticReviewShell({ target, pageMeta, contentHtml, elements }) {
       const actionMatches = candidates.filter(
         (element) => (element.closest('[ga_action]')?.getAttribute('ga_action') || null) === item.ga_action,
       );
-      const hrefMatches = actionMatches.filter((element) => {
+      const areaMatches = actionMatches.filter((element) => {
+        const actionElement = element.closest('[ga_action]');
+        return findGaArea(element, actionElement) === (item.ga_area || '');
+      });
+      const hrefMatches = areaMatches.filter((element) => {
         const anchor = element.closest('a[href]');
         return item.href && anchor?.href === item.href;
       });
-      const fallback = hrefMatches[0] || actionMatches[0] || candidates[0] || null;
+      const fallback = hrefMatches[0] || areaMatches[0] || actionMatches[0] || candidates[0] || null;
 
       if (fallback) {
         return fallback.closest('a,button,input,select,textarea,[role="button"],[onclick],[tabindex]') || fallback;
@@ -1676,7 +2051,7 @@ function renderStaticReviewShell({ target, pageMeta, contentHtml, elements }) {
       return layer;
     }
 
-    function resetPreviewContext(doc = getContentDocument()) {
+    function resetPreviewContext(doc = getPreviewDocument()) {
       if (!doc) return;
 
       for (const restore of revealRestorers.slice().reverse()) {
@@ -1696,6 +2071,9 @@ function renderStaticReviewShell({ target, pageMeta, contentHtml, elements }) {
       const className = element.getAttribute?.('class');
       const styleText = element.getAttribute?.('style');
       const hadHidden = element.hasAttribute?.('hidden') || false;
+      const ariaExpanded = element.getAttribute?.('aria-expanded');
+      const gaArea = element.getAttribute?.('ga_area');
+      const title = element.getAttribute?.('title');
 
       revealRestorers.push(() => {
         if (!element.isConnected) return;
@@ -1707,7 +2085,16 @@ function renderStaticReviewShell({ target, pageMeta, contentHtml, elements }) {
 
         if (hadHidden) element.setAttribute?.('hidden', '');
         else element.removeAttribute?.('hidden');
+
+        restoreAttribute(element, 'aria-expanded', ariaExpanded);
+        restoreAttribute(element, 'ga_area', gaArea);
+        restoreAttribute(element, 'title', title);
       });
+
+      function restoreAttribute(target, name, value) {
+        if (value === null || value === undefined) target.removeAttribute?.(name);
+        else target.setAttribute?.(name, value);
+      }
     }
 
     function resolveHighlightTarget(doc, element) {
@@ -1809,8 +2196,16 @@ async function waitForVisualContent(page) {
   await page.waitForTimeout(250);
 }
 
-async function collectGaElements(page, pageId) {
-  return page.evaluate((snapshotPageId) => {
+async function collectGaElements(page, target) {
+  const collectionConfig = {
+    snapshotPageId: target.id,
+    usesGaArea: Boolean(target.usesGaArea),
+    excludedActions: target.excludedActions || [],
+    includedFixedActions: target.includedFixedActions || [],
+  };
+
+  return page.evaluate((config) => {
+    const { snapshotPageId, usesGaArea, excludedActions, includedFixedActions } = config;
     const contentRoot = findContentRoot();
     const rawElements = Array.from(document.querySelectorAll('[ga_label]'));
     const elements = [];
@@ -1825,7 +2220,10 @@ async function collectGaElements(page, pageId) {
         labelElement;
       const measurementElement = getMeasurementElement(labelElement, clickableElement);
       const snapshotId = `${snapshotPageId}-${String(rawIndex + 1).padStart(4, '0')}`;
-      const domReasons = getDomExclusionReasons(labelElement, clickableElement, contentRoot);
+      const gaAction = cleanAttribute(actionElement?.getAttribute('ga_action')) || null;
+      const gaArea = usesGaArea ? findGaArea(labelElement, actionElement) : '';
+      const gaLabel = cleanAttribute(labelElement.getAttribute('ga_label'));
+      const domReasons = getDomExclusionReasons(labelElement, clickableElement, contentRoot, gaAction);
       const screenReasons = [...domReasons];
       if (!isVisible(labelElement) || !isVisible(clickableElement)) screenReasons.push('hidden');
       if (!intersectsCapturedPage(clickableElement)) screenReasons.push('outside-screenshot');
@@ -1833,52 +2231,70 @@ async function collectGaElements(page, pageId) {
       const clickableRect = rectToObject(measurementElement.getBoundingClientRect());
       const visible = isVisible(labelElement) && isVisible(clickableElement);
       const inViewport = intersectsViewport(clickableElement);
-      const gaAction = actionElement?.getAttribute('ga_action') || null;
-      const gaLabel = labelElement.getAttribute('ga_label') || '';
       const href = getHref(clickableElement);
       const actionSelector = actionElement ? cssPath(actionElement) : null;
       const labelSelector = cssPath(labelElement);
       const clickableSelector = cssPath(clickableElement);
-      const periodBaseKey = `${snapshotPageId}:${hashString([gaAction, gaLabel, href].join('|'))}`;
-      const periodOrdinal = (periodKeyCounts.get(periodBaseKey) || 0) + 1;
-      periodKeyCounts.set(periodBaseKey, periodOrdinal);
-      const periodKey = `${periodBaseKey}:${periodOrdinal}`;
+      const toggleControl =
+        labelElement.closest('[data-ga-snapshot-toggle]') ||
+        labelElement.querySelector('[data-ga-snapshot-toggle]');
+      const areaVariants = usesGaArea
+        ? toggleAreaVariants(toggleControl, gaArea)
+        : [{ gaArea, toggleState: null }];
+      const variantItems = areaVariants.map((variant, variantIndex) => {
+        const variantSnapshotId = variantIndex === 0
+          ? snapshotId
+          : `${snapshotId}-toggle-${variant.toggleState || variantIndex + 1}`;
+        const periodBaseKey = `${snapshotPageId}:${hashString([gaAction, variant.gaArea, gaLabel, href].join('|'))}`;
+        const periodOrdinal = (periodKeyCounts.get(periodBaseKey) || 0) + 1;
+        periodKeyCounts.set(periodBaseKey, periodOrdinal);
 
-      labelElement.setAttribute('data-ga-snapshot-id', snapshotId);
-      appendTokenAttribute(measurementElement, 'data-ga-highlight-ids', snapshotId);
-      appendTokenAttribute(clickableElement, 'data-ga-highlight-ids', snapshotId);
+        return {
+          snapshotId: variantSnapshotId,
+          highlightSnapshotId: variantSnapshotId,
+          periodKey: `${periodBaseKey}:${periodOrdinal}`,
+          stableKey: `${snapshotPageId}:${hashString(
+            [gaAction, variant.gaArea, gaLabel, href, actionSelector].join('|'),
+          )}`,
+          sourceIndex: rawIndex + 1,
+          ga_action: gaAction,
+          ga_area: variant.gaArea,
+          ga_label: gaLabel,
+          toggleState: variant.toggleState,
+          text: getMeaningfulText(clickableElement, labelElement),
+          href,
+          labelTag: labelElement.tagName.toLowerCase(),
+          clickableTag: clickableElement.tagName.toLowerCase(),
+          selector: labelSelector,
+          actionSelector,
+          clickableSelector,
+          labelBBox: withPageOffset(labelRect),
+          clickableBBox: withPageOffset(clickableRect),
+          visible,
+          inViewport,
+          status: visible ? (inViewport ? 'visible' : 'offscreen') : 'hidden',
+          domHash: hashString([labelElement.outerHTML, variant.gaArea, variant.toggleState].join('|')),
+        };
+      });
 
-      const item = {
-        snapshotId,
-        highlightSnapshotId: snapshotId,
-        periodKey,
-        stableKey: `${snapshotPageId}:${hashString([gaAction, gaLabel, href, actionSelector].join('|'))}`,
-        sourceIndex: rawIndex + 1,
-        ga_action: gaAction,
-        ga_label: gaLabel,
-        text: getMeaningfulText(clickableElement, labelElement),
-        href,
-        labelTag: labelElement.tagName.toLowerCase(),
-        clickableTag: clickableElement.tagName.toLowerCase(),
-        selector: labelSelector,
-        actionSelector,
-        clickableSelector,
-        labelBBox: withPageOffset(labelRect),
-        clickableBBox: withPageOffset(clickableRect),
-        visible,
-        inViewport,
-        status: visible ? (inViewport ? 'visible' : 'offscreen') : 'hidden',
-        domHash: hashString(labelElement.outerHTML),
-      };
-
-      if (!domReasons.length) {
-        domElements.push(item);
+      if (!domReasons.includes('excluded-ga-action')) {
+        labelElement.setAttribute('data-ga-snapshot-id', snapshotId);
+        for (const item of variantItems) {
+          appendTokenAttribute(measurementElement, 'data-ga-highlight-ids', item.snapshotId);
+          appendTokenAttribute(clickableElement, 'data-ga-highlight-ids', item.snapshotId);
+        }
       }
 
-      if (screenReasons.length) {
-        excluded.push({ ...item, excludedReasons: screenReasons });
-      } else {
-        elements.push(item);
+      for (const item of variantItems) {
+        if (!domReasons.length) {
+          domElements.push(item);
+        }
+
+        if (screenReasons.length) {
+          excluded.push({ ...item, excludedReasons: screenReasons });
+        } else {
+          elements.push(item);
+        }
       }
     }
 
@@ -1900,6 +2316,8 @@ async function collectGaElements(page, pageId) {
         excludedGaLabelElements: excluded.length,
         missingGaAction: sortedElements.filter((item) => !item.ga_action).length,
         missingDomGaAction: sortedDomElements.filter((item) => !item.ga_action).length,
+        missingGaArea: usesGaArea ? sortedElements.filter((item) => !item.ga_area).length : 0,
+        missingDomGaArea: usesGaArea ? sortedDomElements.filter((item) => !item.ga_area).length : 0,
       },
       excludedCounts,
       elements: sortedElements,
@@ -1945,13 +2363,55 @@ async function collectGaElements(page, pageId) {
       return Math.round(value);
     }
 
-    function getDomExclusionReasons(element, clickableElement, root) {
+    function toggleAreaVariants(control, currentArea) {
+      if (!control) return [{ gaArea: currentArea, toggleState: null }];
+
+      const collapsedArea = cleanAttribute(control.getAttribute('data-ga-snapshot-collapsed-area'));
+      const expandedArea = cleanAttribute(control.getAttribute('data-ga-snapshot-expanded-area'));
+      if (!collapsedArea || !expandedArea || collapsedArea === expandedArea) {
+        return [{ gaArea: currentArea, toggleState: null }];
+      }
+
+      const variants = [
+        { gaArea: collapsedArea, toggleState: 'collapsed' },
+        { gaArea: expandedArea, toggleState: 'expanded' },
+      ];
+      const currentIndex = variants.findIndex((variant) => variant.gaArea === currentArea);
+      if (currentIndex > 0) variants.unshift(variants.splice(currentIndex, 1)[0]);
+      if (currentIndex === -1 && currentArea) {
+        variants.unshift({ gaArea: currentArea, toggleState: null });
+      }
+      return variants;
+    }
+
+    function getDomExclusionReasons(element, clickableElement, root, gaAction) {
       const reasons = [];
-      if (root && root !== document.body && !root.contains(element)) reasons.push('outside-content-root');
+      const includedFixedAction = includedFixedActions.includes(gaAction || '');
+      if (root && root !== document.body && !root.contains(element) && !includedFixedAction) {
+        reasons.push('outside-content-root');
+      }
       if (isInsideShell(element)) reasons.push('gnb-header-footer');
       if (isInsidePopup(element)) reasons.push('popup');
-      if (isFixedOverlay(element)) reasons.push('floating-overlay');
+      if (isFixedOverlay(element) && !includedFixedAction) reasons.push('floating-overlay');
+      if (excludedActions.includes(gaAction || '')) reasons.push('excluded-ga-action');
       return reasons;
+    }
+
+    function findGaArea(labelElement, actionElement) {
+      let current = labelElement;
+      while (current) {
+        if (current.hasAttribute?.('ga_area')) {
+          return cleanAttribute(current.getAttribute('ga_area'));
+        }
+        if (current === actionElement) break;
+        current = current.parentElement;
+      }
+      return '';
+    }
+
+    function cleanAttribute(value) {
+      // The main page replaces String.prototype.trim with a nonstandard implementation.
+      return value === null || value === undefined ? '' : `${value}`;
     }
 
     function isInsideShell(element) {
@@ -2212,7 +2672,7 @@ async function collectGaElements(page, pageId) {
     function round(value) {
       return Math.round(value * 100) / 100;
     }
-  }, pageId);
+  }, collectionConfig);
 }
 
 function renderReport(snapshot) {
@@ -2694,13 +3154,21 @@ async function rebuildSnapshotCatalog(root) {
       const domElements = (await readJsonFile(path.join(targetDir, 'ga-dom-elements.json'))) || [];
       const page = snapshot?.page || target.page || {};
       const compactElements = Array.isArray(domElements)
-        ? domElements.map((element) => ({
+        ? domElements
+          .filter((element) => !isExcludedSktGaAction(target.id, element.ga_action))
+          .map((element) => ({
             periodKey: element.periodKey || makePeriodKey(target.id, element),
             stableKey: element.stableKey || null,
             snapshotId: element.snapshotId || null,
             ga_action: element.ga_action || null,
+            ga_area: element.ga_area || '',
             ga_label: element.ga_label || '',
-            ga4MetricKey: makeGa4MetricKey(element.ga_action || '(missing)', element.ga_label || ''),
+            toggleState: element.toggleState || null,
+            ga4MetricKey: makeGa4MetricKey(
+              element.ga_action || '(missing)',
+              element.ga_area || '',
+              element.ga_label || '',
+            ),
             href: element.href || null,
             index: element.index || null,
             sourceIndex: element.sourceIndex || null,
@@ -2716,6 +3184,9 @@ async function rebuildSnapshotCatalog(root) {
 
       catalogTargets.push({
         id: target.id,
+        pageType: target.pageType || getSktPageConfig(target.id).pageType,
+        eventCategory: target.eventCategory || getSktPageConfig(target.id).eventCategory,
+        usesGaArea: target.usesGaArea ?? getSktPageConfig(target.id).usesGaArea,
         label: target.label || snapshot?.label || target.id,
         title: target.title || snapshot?.title || '',
         url: target.url || snapshot?.requestedUrl || target.finalUrl || '',
@@ -3608,6 +4079,10 @@ function renderSnapshotCatalog() {
       table-layout: fixed;
     }
 
+    #gaTable.hide-ga-area .ga-area-col {
+      display: none;
+    }
+
     th,
     td {
       padding: 8px 9px;
@@ -3974,14 +4449,14 @@ function renderSnapshotCatalog() {
         <div class="help-dialog-body">
           <section class="help-section">
             <h3>이 대시보드의 목적</h3>
-            <p>T world Shop 메인페이지는 노출 요소가 자주 바뀌고, 각 클릭 영역이 어떤 <strong>ga_action</strong>, <strong>ga_label</strong> 값을 가지는지 한눈에 파악하기 어려워 분석에 시간이 걸렸습니다. 이 대시보드는 그 불편을 줄이기 위해 날짜별 메인페이지 화면과 GA 클릭 어트리뷰트를 함께 저장하고 비교할 수 있도록 만든 화면입니다.</p>
-            <p>매일 오전 10시 KST에 봇이 T world Shop PC/MO 메인페이지에 접속해서 콘텐츠 HTML을 저장합니다. 팝업은 닫고, GNB와 푸터를 제외한 콘텐츠 영역에서 <strong>ga_action</strong>, <strong>ga_label</strong> 어트리뷰트를 가진 클릭 요소를 수집합니다.</p>
+            <p>T world Shop 페이지는 노출 요소가 자주 바뀌고, 각 클릭 영역이 어떤 <strong>ga_action</strong>, <strong>ga_area</strong>, <strong>ga_label</strong> 값을 가지는지 한눈에 파악하기 어려워 분석에 시간이 걸렸습니다. 이 대시보드는 그 불편을 줄이기 위해 날짜별 화면과 GA 클릭 어트리뷰트를 함께 저장하고 비교할 수 있도록 만든 화면입니다.</p>
+            <p>매일 오전 10시 KST에 봇이 등록된 T world Shop PC/MO 페이지에 접속해서 콘텐츠 HTML을 저장합니다. 팝업은 닫고, GNB와 푸터를 제외한 콘텐츠 영역에서 GA 클릭 어트리뷰트를 가진 요소를 수집합니다.</p>
             <p>왼쪽 화면은 매일 오전 10시에 봇이 사이트에 직접 들어가 캡처한 HTML 화면이고, 오른쪽 표는 선택한 기간 동안 발견된 GA 요소와 GA4 클릭 데이터를 함께 보여줍니다.</p>
           </section>
           <section class="help-section">
             <h3>페이지와 기간 선택</h3>
             <ul>
-              <li><strong>페이지</strong>: T world Shop Mobile Main과 PC Main을 선택합니다.</li>
+              <li><strong>페이지</strong>: T world Shop PC/MO 메인과 등록된 기획전 페이지를 선택합니다.</li>
               <li><strong>시작일/종료일</strong>: 선택한 기간에 존재했던 요소를 한눈에 봅니다.</li>
               <li>기본 왼쪽 화면은 선택 기간 안에서 가장 최신 캡처본입니다.</li>
               <li>표에서 최신 캡처본에 없는 과거 요소를 클릭하면, 그 요소가 존재하던 기간 안의 가장 최신 캡처본으로 왼쪽 화면이 바뀝니다.</li>
@@ -3991,8 +4466,10 @@ function renderSnapshotCatalog() {
             <h3>GA4 데이터 기준</h3>
             <ul>
               <li>이벤트명은 <strong>click</strong>입니다.</li>
-              <li>PC는 <strong>event_category = TWD_main</strong> 기준입니다.</li>
-              <li>MO는 <strong>event_category = MTWD_main</strong>과 <strong>hostName = m.shop.tworld.co.kr</strong> 기준입니다.</li>
+              <li>메인은 PC <strong>TWD_main</strong>, MO <strong>MTWD_main</strong> 기준입니다.</li>
+              <li>P00000494 기획전은 PC <strong>TWD_exhibition - P00000494</strong>, MO <strong>MTWD_exhibition - P00000494</strong> 기준입니다.</li>
+              <li>MO 조회에는 <strong>hostName = m.shop.tworld.co.kr</strong> 조건이 함께 적용됩니다.</li>
+              <li>기획전은 선택 값인 <strong>event_area</strong>를 화면의 <strong>ga_area</strong>와 추가로 매칭합니다.</li>
               <li>표의 수치는 <strong>값 (전체 대비 비율)</strong> 형식입니다.</li>
               <li>오늘 날짜를 포함하면 GA4 특성상 일반적으로 현재 시점 기준 약 4시간 전 데이터까지만 조회될 수 있습니다. 확정 데이터는 보통 다음 날 이후가 더 안정적입니다.</li>
             </ul>
@@ -4010,7 +4487,7 @@ function renderSnapshotCatalog() {
             <ul>
               <li>왼쪽 캡처 화면의 요소를 클릭하면 오른쪽 표에서 해당 행으로 이동합니다.</li>
               <li>오른쪽 표의 행을 클릭하면 왼쪽 화면이 해당 요소 위치로 이동하고 빨간 박스를 표시합니다.</li>
-              <li>같은 ga_action/ga_label/유지기간을 가진 요소가 여러 개면 표에서는 하나로 합쳐지고, 반복 클릭하면 해당 요소들을 차례로 포커스합니다.</li>
+              <li>같은 ga_action/ga_area/ga_label/유지기간을 가진 요소가 여러 개면 표에서는 하나로 합쳐지고, 반복 클릭하면 해당 요소들을 차례로 포커스합니다.</li>
               <li>왼쪽 캡처 화면의 원래 링크 이동 기능은 막혀 있습니다.</li>
             </ul>
           </section>
@@ -4019,7 +4496,7 @@ function renderSnapshotCatalog() {
             <ul>
               <li><strong>전체 펼치기/전체 접기</strong>로 ga_action 그룹을 한 번에 열고 닫을 수 있습니다.</li>
               <li>각 ga_action 그룹 행을 클릭하면 해당 그룹만 접거나 펼칩니다.</li>
-              <li>검색창에서 ga_action, ga_label, 유지기간을 검색할 수 있습니다.</li>
+              <li>검색창에서 ga_action, ga_area, ga_label, 유지기간을 검색할 수 있습니다.</li>
               <li>정렬 메뉴 또는 열 제목을 눌러 화면 순서, GA4 수치, 유지기간, GA 어트리뷰트 기준으로 정렬할 수 있습니다.</li>
               <li>열 경계선을 드래그해서 표 열 너비를 조정할 수 있습니다.</li>
               <li>왼쪽 화면과 표 사이 경계선을 드래그해서 화면 비율을 조정할 수 있습니다.</li>
@@ -4028,7 +4505,7 @@ function renderSnapshotCatalog() {
           <section class="help-section">
             <h3>유지기간</h3>
             <p>유지기간은 선택한 기간 안에서 같은 요소가 계속 발견된 날짜 구간입니다. 형식은 <strong>YYYY-MM-DD ~ YYYY-MM-DD</strong>입니다.</p>
-            <p>중간에 요소가 사라졌다가 다시 생기거나, ga_action/ga_label 조합이 바뀌면 유지기간이 나뉠 수 있습니다.</p>
+            <p>중간에 요소가 사라졌다가 다시 생기거나, GA 어트리뷰트 조합이 바뀌면 유지기간이 나뉠 수 있습니다.</p>
             <p>표에는 가장 최근 구간을 우선 표시합니다. 유지기간 셀을 누르면 선택 기간 안의 모든 구간과 총 관찰일을 확인할 수 있습니다.</p>
           </section>
           <section class="help-section">
@@ -4096,7 +4573,7 @@ function renderSnapshotCatalog() {
           <div class="insights-resizer" id="insightsResizer" role="separator" aria-orientation="horizontal" aria-label="Resize Gemini insights"></div>
         </section>
         <div class="toolbar">
-          <input id="filterInput" type="search" placeholder="ga_action, ga_label 검색">
+          <input id="filterInput" type="search" placeholder="ga_action, ga_area, ga_label 검색">
           <select id="sortSelect" aria-label="표 정렬">
             <option value="screen:asc">화면 순서</option>
             <option value="eventCount:desc">이벤트 수 높은순</option>
@@ -4113,6 +4590,8 @@ function renderSnapshotCatalog() {
             <option value="observedDays:asc">총 관찰일 짧은순</option>
             <option value="action:asc">ga_action 가나다순</option>
             <option value="action:desc">ga_action 역순</option>
+            <option value="area:asc">ga_area 가나다순</option>
+            <option value="area:desc">ga_area 역순</option>
             <option value="label:asc">ga_label 가나다순</option>
             <option value="label:desc">ga_label 역순</option>
           </select>
@@ -4122,9 +4601,10 @@ function renderSnapshotCatalog() {
           </div>
         </div>
         <div class="table-wrap" id="tableWrap">
-          <table id="gaTable">
+          <table id="gaTable" class="hide-ga-area">
             <colgroup id="tableColGroup">
               <col style="width: 140px">
+              <col class="ga-area-col" style="width: 150px">
               <col style="width: 205px">
               <col style="width: 165px">
               <col style="width: 103px">
@@ -4134,11 +4614,12 @@ function renderSnapshotCatalog() {
             <thead>
               <tr>
                 <th data-sort-key="action" aria-sort="none"><button class="sort-button" type="button"><span>ga_action</span><span class="sort-indicator" aria-hidden="true"></span></button><span class="col-resizer" data-col-index="0"></span></th>
-                <th data-sort-key="label" aria-sort="none"><button class="sort-button" type="button"><span>ga_label</span><span class="sort-indicator" aria-hidden="true"></span></button><span class="col-resizer" data-col-index="1"></span></th>
-                <th data-sort-key="lastSeen" aria-sort="none"><button class="sort-button" type="button"><span>유지 기간</span><span class="sort-indicator" aria-hidden="true"></span></button><span class="col-resizer" data-col-index="2"></span></th>
-                <th class="metric-sort" data-sort-key="eventCount" aria-sort="none"><button class="sort-button" type="button"><span>이벤트 수</span><span class="sort-indicator" aria-hidden="true"></span></button><span class="col-resizer" data-col-index="3"></span></th>
-                <th class="metric-sort" data-sort-key="sessions" aria-sort="none"><button class="sort-button" type="button"><span>세션 수</span><span class="sort-indicator" aria-hidden="true"></span></button><span class="col-resizer" data-col-index="4"></span></th>
-                <th class="metric-sort" data-sort-key="activeUsers" aria-sort="none"><button class="sort-button" type="button"><span>사용자 수</span><span class="sort-indicator" aria-hidden="true"></span></button><span class="col-resizer" data-col-index="5"></span></th>
+                <th class="ga-area-col" data-sort-key="area" aria-sort="none"><button class="sort-button" type="button"><span>ga_area</span><span class="sort-indicator" aria-hidden="true"></span></button><span class="col-resizer" data-col-index="1"></span></th>
+                <th data-sort-key="label" aria-sort="none"><button class="sort-button" type="button"><span>ga_label</span><span class="sort-indicator" aria-hidden="true"></span></button><span class="col-resizer" data-col-index="2"></span></th>
+                <th data-sort-key="lastSeen" aria-sort="none"><button class="sort-button" type="button"><span>유지 기간</span><span class="sort-indicator" aria-hidden="true"></span></button><span class="col-resizer" data-col-index="3"></span></th>
+                <th class="metric-sort" data-sort-key="eventCount" aria-sort="none"><button class="sort-button" type="button"><span>이벤트 수</span><span class="sort-indicator" aria-hidden="true"></span></button><span class="col-resizer" data-col-index="4"></span></th>
+                <th class="metric-sort" data-sort-key="sessions" aria-sort="none"><button class="sort-button" type="button"><span>세션 수</span><span class="sort-indicator" aria-hidden="true"></span></button><span class="col-resizer" data-col-index="5"></span></th>
+                <th class="metric-sort" data-sort-key="activeUsers" aria-sort="none"><button class="sort-button" type="button"><span>사용자 수</span><span class="sort-indicator" aria-hidden="true"></span></button><span class="col-resizer" data-col-index="6"></span></th>
               </tr>
             </thead>
             <tbody id="periodRows"></tbody>
@@ -4157,6 +4638,9 @@ function renderSnapshotCatalog() {
   </main>
   <script>
     const TRACKING_CORRECTIONS = ${jsonForInlineScript(SKT_TRACKING_CORRECTIONS)};
+    const PAGE_CONFIGS = ${jsonForInlineScript(
+      Object.fromEntries(SKT_PAGE_CONFIGS.map((config) => [config.id, config])),
+    )};
     const targetSelect = document.getElementById('targetSelect');
     const startDateInput = document.getElementById('startDate');
     const endDateInput = document.getElementById('endDate');
@@ -4214,7 +4698,7 @@ function renderSnapshotCatalog() {
       {
         target: '#pageControl',
         title: '페이지 선택',
-        body: '여기에서 MO 메인페이지와 PC 메인페이지를 전환합니다. 페이지를 바꾸면 왼쪽 캡처 화면과 오른쪽 GA 표가 함께 바뀝니다.',
+        body: '여기에서 PC/MO 메인과 기획전 페이지를 전환합니다. 페이지를 바꾸면 왼쪽 캡처 화면과 오른쪽 GA 표가 함께 바뀝니다.',
       },
       {
         target: '#dateControls',
@@ -4270,6 +4754,7 @@ function renderSnapshotCatalog() {
     let revealedElements = new Set();
     let sourceViewportWidth = 1440;
     let isMobilePreview = false;
+    let showGaArea = false;
     let lastPreviewMode = null;
     let introStepIndex = 0;
     let activeTourTarget = null;
@@ -4476,7 +4961,7 @@ function renderSnapshotCatalog() {
 
     function installColumnResizers() {
       const cols = Array.from(tableColGroup.children);
-      const minWidths = [120, 150, 145, 85, 85, 85];
+      const minWidths = [120, 110, 150, 145, 85, 85, 85];
 
       for (const handle of document.querySelectorAll('.col-resizer')) {
         handle.addEventListener('pointerdown', (event) => {
@@ -4581,12 +5066,19 @@ function renderSnapshotCatalog() {
 
     function syncTableWidth() {
       const totalWidth = Array.from(tableColGroup.children).reduce((sum, col) => {
+        if (col.classList.contains('ga-area-col') && !showGaArea) return sum;
         return sum + (Number.parseFloat(col.style.width) || col.getBoundingClientRect().width || 0);
       }, 0);
       const visibleWidth = Math.max(0, tableWrap.clientWidth - 1);
-      const nextWidth = Math.max(820, Math.ceil(totalWidth), visibleWidth);
+      const nextWidth = Math.max(showGaArea ? 930 : 820, Math.ceil(totalWidth), visibleWidth);
       gaTable.style.width = nextWidth + 'px';
       gaTable.style.minWidth = nextWidth + 'px';
+    }
+
+    function updateGaAreaVisibility(targetId) {
+      showGaArea = Boolean(PAGE_CONFIGS[targetId]?.usesGaArea);
+      gaTable.classList.toggle('hide-ga-area', !showGaArea);
+      syncTableWidth();
     }
 
     function scheduleLayoutSync() {
@@ -4645,7 +5137,7 @@ function renderSnapshotCatalog() {
 
       const splitterWidth = splitter.getBoundingClientRect().width || 10;
       const minPreview = mobile ? 300 : 320;
-      const preferredPreview = mobile ? 392 : 420;
+      const preferredPreview = mobile ? 392 : Math.max(520, Math.round(available * 0.58));
       const minPanel = 360;
       const maxPreview = Math.max(minPreview, available - splitterWidth - minPanel);
       const previewWidth = Math.max(minPreview, Math.min(preferredPreview, maxPreview));
@@ -4664,6 +5156,7 @@ function renderSnapshotCatalog() {
       const periodRequestId = ++periodViewRequestId;
       normalizeDateRange();
       const targetId = targetSelect.value;
+      updateGaAreaVisibility(targetId);
       const runs = getSelectedRuns(targetId);
       const latestRun = runs.at(-1) || null;
       const latestTarget = latestRun ? getTarget(latestRun, targetId) : null;
@@ -5286,19 +5779,23 @@ function renderSnapshotCatalog() {
         const identityCounts = new Map();
         for (const element of target?.elements || []) {
           const rawAction = element.ga_action || '(missing)';
+          if (isExcludedTrackingAction(targetId, rawAction)) continue;
           const action = normalizeTrackingAction(targetId, run.date, rawAction);
+          const area = element.ga_area || '';
           const label = element.ga_label || '';
-          const identity = [targetId, action, label, element.href || ''].join('|');
+          const identity = [targetId, action, area, label, element.href || ''].join('|');
           const ordinal = (identityCounts.get(identity) || 0) + 1;
           identityCounts.set(identity, ordinal);
           const key = 'canonical:' + identity + ':' + ordinal;
-          const metricKey = ga4MetricKey(action, label);
+          const metricKey = ga4MetricKey(action, area, label);
           let record = byKey.get(key);
           if (!record) {
             record = {
               key,
               ga_action: action,
+              ga_area: area,
               ga_label: label,
+              toggleState: element.toggleState || null,
               href: element.href || null,
               metricKey,
               occurrences: [],
@@ -5318,7 +5815,9 @@ function renderSnapshotCatalog() {
             periodKey: element.periodKey,
             ga_action: action,
             raw_ga_action: rawAction,
+            ga_area: area,
             ga_label: label,
+            toggleState: element.toggleState || null,
             href: element.href || null,
             index: element.sourceIndex || element.index || 0,
             ga4: emptyMetrics(),
@@ -5419,7 +5918,7 @@ function renderSnapshotCatalog() {
       const groupByAction = new Map();
 
       for (const record of periodRecords) {
-        const haystack = [record.ga_action, record.ga_label, record.href, formatPeriods(record.periods)].filter(Boolean).join(' ').toLowerCase();
+        const haystack = [record.ga_action, record.ga_area, record.ga_label, record.href, formatPeriods(record.periods)].filter(Boolean).join(' ').toLowerCase();
         if (query && !haystack.includes(query)) continue;
 
         const action = record.ga_action || '(missing)';
@@ -5453,6 +5952,7 @@ function renderSnapshotCatalog() {
                   const occurrenceBadge = record.currentOccurrenceCount > 1 ? '<small>' + record.currentOccurrenceCount + ' elements</small>' : '';
                   return '<tr class="item-row' + active + '" data-key="' + escapeHtml(record.key) + '" data-group-id="' + escapeHtml(group.id) + '">' +
                     '<td><code>' + escapeHtml(record.ga_action || '(missing)') + '</code></td>' +
+                    '<td class="ga-area-col"><code>' + escapeHtml(record.ga_area || '-') + '</code></td>' +
                     '<td><code>' + escapeHtml(record.ga_label) + '</code>' + occurrenceBadge + '</td>' +
                     '<td>' + renderPeriodCell(record) + '</td>' +
                     '<td class="metric">' + formatMetric(record.ga4.eventCount, 'eventCount') + '</td>' +
@@ -5463,7 +5963,7 @@ function renderSnapshotCatalog() {
                 .join('');
 
           return '<tr class="group-row" data-group-id="' + escapeHtml(group.id) + '">' +
-            '<td colspan="3"><button class="group-toggle" type="button">' +
+            '<td colspan="' + trackingColumnCount() + '"><button class="group-toggle" type="button">' +
             '<span class="group-state">' + (collapsed ? '[+]' : '[-]') + '</span>' +
             '<span>' + escapeHtml(group.action) + '</span>' +
             '<small>' + group.records.length + ' items</small>' +
@@ -5528,13 +6028,14 @@ function renderSnapshotCatalog() {
 
     function comparePeriodGroups(left, right) {
       const key = sortState.key;
-      if (key === 'screen' || key === 'label') return compareDefaultOrder(left, right);
+      if (key === 'screen' || key === 'area' || key === 'label') return compareDefaultOrder(left, right);
       const result = compareSortValues(groupSortValue(left, key), groupSortValue(right, key), sortState.direction);
       return result || compareDefaultOrder(left, right);
     }
 
     function recordSortValue(record, key) {
       if (key === 'action') return record.ga_action || '';
+      if (key === 'area') return record.ga_area || '';
       if (key === 'label') return record.ga_label || '';
       if (key === 'firstSeen') return record.firstSeen || '';
       if (key === 'lastSeen') return record.lastSeen || '';
@@ -5565,13 +6066,14 @@ function renderSnapshotCatalog() {
     }
 
     function renderStatusRow(message) {
-      periodRows.innerHTML = '<tr class="status-row"><td colspan="6">' + escapeHtml(message) + '</td></tr>';
+      periodRows.innerHTML = '<tr class="status-row"><td colspan="' + tableColumnCount() + '">' + escapeHtml(message) + '</td></tr>';
     }
 
     function renderTotalRow() {
-      const category = ga4Status.eventCategory || (targetSelect.value.includes('mobile') ? 'MTWD_main' : 'TWD_main');
+      const category = ga4Status.eventCategory || PAGE_CONFIGS[targetSelect.value]?.eventCategory ||
+        (targetSelect.value.includes('mobile') ? 'MTWD_main' : 'TWD_main');
       return '<tr class="total-row">' +
-        '<td colspan="3"><strong>총합</strong><small>click · ' + escapeHtml(category) + '</small></td>' +
+        '<td colspan="' + trackingColumnCount() + '"><strong>총합</strong><small>click · ' + escapeHtml(category) + '</small></td>' +
         '<td class="metric">' + formatMetric(ga4Status.totals.eventCount, 'eventCount') + '</td>' +
         '<td class="metric">' + formatMetric(ga4Status.totals.sessions, 'sessions') + '</td>' +
         '<td class="metric">' + formatMetric(ga4Status.totals.activeUsers, 'activeUsers') + '</td>' +
@@ -5600,6 +6102,7 @@ function renderSnapshotCatalog() {
       const allowedKeys = new Set([
         'screen',
         'action',
+        'area',
         'label',
         'firstSeen',
         'lastSeen',
@@ -5963,8 +6466,13 @@ function renderSnapshotCatalog() {
         (event) => {
           event.preventDefault();
           event.stopPropagation();
+          const toggle = event.target.closest?.('[data-ga-snapshot-toggle][aria-controls]');
+          const nextExpanded = toggle ? toggleStaticControl(doc, toggle) : null;
           const occurrence = findOccurrenceFromContentTarget(event.target);
           if (occurrence) focusOccurrence(occurrence, { clearFilter: true });
+          if (toggle && nextExpanded !== null) {
+            setStaticControlState(doc, toggle, nextExpanded);
+          }
         },
         true,
       );
@@ -5972,11 +6480,125 @@ function renderSnapshotCatalog() {
       const style = doc.createElement('style');
       style.textContent = 'a, button, [role="button"], [ga_label] { cursor: pointer !important; }';
       doc.head?.append(style);
+      doc.querySelectorAll('[data-ga-snapshot-toggle][aria-controls]').forEach(ensureToggleStacking);
+    }
+
+    function toggleStaticControl(doc, control) {
+      const controlledId = control.getAttribute('aria-controls') || '';
+      const controlled = controlledId ? doc.getElementById(controlledId) : null;
+      if (!controlled) return null;
+
+      const expanded = doc.defaultView.getComputedStyle(controlled).display !== 'none';
+      const nextExpanded = !expanded;
+      setStaticControlState(doc, control, nextExpanded);
+      return nextExpanded;
+    }
+
+    function setStaticControlState(doc, control, nextExpanded) {
+      const controlledId = control.getAttribute('aria-controls') || '';
+      const controlled = controlledId ? doc.getElementById(controlledId) : null;
+      if (!controlled) return;
+
+      rememberElementState(control);
+      rememberElementState(controlled);
+      control.setAttribute('aria-expanded', String(nextExpanded));
+      controlled.style.display = nextExpanded
+        ? control.getAttribute('data-ga-snapshot-expanded-display') || 'block'
+        : 'none';
+      ensureToggleStacking(control);
+
+      const listItem = control.closest('li');
+      if (control.matches('.q') && listItem) {
+        listItem.classList.toggle('on', nextExpanded);
+        control.title = nextExpanded ? '닫기' : '열기';
+      }
+
+      if (control.hasAttribute('data-toggle-btn')) {
+        const images = Array.from(control.parentElement?.querySelectorAll(':scope > .btn-toggle-img') || []);
+        images.forEach((image, index) => {
+          image.style.display = index === (nextExpanded ? 1 : 0) ? 'block' : 'none';
+        });
+      }
+
+      const areaHolder = findToggleAreaHolder(control);
+      const nextArea = control.getAttribute(
+        nextExpanded ? 'data-ga-snapshot-expanded-area' : 'data-ga-snapshot-collapsed-area',
+      );
+      if (areaHolder && nextArea) {
+        rememberElementState(areaHolder);
+        areaHolder.setAttribute('ga_area', nextArea);
+      }
+
+      if (control.getAttribute('data-ga-snapshot-toggle-kind') === 'quick-menu') {
+        const quickRoot = control.closest('.sticky-shortcut');
+        const dimmed = quickRoot?.nextElementSibling?.matches?.('.sticky-shortcut-dimmed')
+          ? quickRoot.nextElementSibling
+          : null;
+        if (quickRoot) {
+          rememberElementState(quickRoot);
+          quickRoot.classList.toggle('active', nextExpanded);
+        }
+        if (dimmed) {
+          rememberElementState(dimmed);
+          dimmed.style.display = nextExpanded ? 'block' : 'none';
+        }
+      }
+
+      doc.defaultView.requestAnimationFrame(() => {
+        if (highlightedElement) drawHighlightBoxes(doc, [highlightedElement]);
+      });
+    }
+
+    function syncToggleStateForOccurrence(doc, target, occurrence) {
+      if (!occurrence?.toggleState) return;
+      const control =
+        target.closest?.('[data-ga-snapshot-toggle]') ||
+        target.querySelector?.('[data-ga-snapshot-toggle]');
+      if (!control) return;
+      setStaticControlState(doc, control, occurrence.toggleState === 'expanded');
+    }
+
+    function findToggleAreaHolder(control) {
+      const nestedHolder = control.querySelector?.('[data-ga-snapshot-toggle-area-holder]');
+      if (nestedHolder) return nestedHolder;
+
+      let current = control;
+      const actionElement = control.closest('[ga_action]');
+      while (current) {
+        if (current.hasAttribute?.('data-ga-snapshot-toggle-area-holder')) return current;
+        if (current === actionElement) break;
+        current = current.parentElement;
+      }
+      return null;
+    }
+
+    function ensureToggleStacking(control) {
+      const parent = control.parentElement;
+      if (!parent) return;
+
+      if (parent.ownerDocument.defaultView.getComputedStyle(parent).position === 'static') {
+        parent.style.position = 'relative';
+      }
+      parent.style.zIndex = '2';
     }
 
     function findOccurrenceFromContentTarget(target) {
       if (!target || typeof target.closest !== 'function' || !currentTarget || !currentRun) return null;
 
+      const labelElement = target.closest('[ga_label]');
+      const actionElement = labelElement?.closest('[ga_action]') || null;
+      const currentTracking = labelElement
+        ? {
+            gaLabel: labelElement.getAttribute('ga_label') || '',
+            gaAction: normalizeTrackingAction(
+              currentTarget.id,
+              currentRun.date,
+              actionElement?.getAttribute('ga_action') || null,
+            ),
+            gaArea: findGaArea(labelElement, actionElement),
+            href: labelElement.closest('a[href]')?.href || null,
+          }
+        : null;
       const snapshotIds = [];
       const direct = target.closest('[data-ga-snapshot-id]');
       const directId = direct?.getAttribute('data-ga-snapshot-id');
@@ -5985,23 +6607,34 @@ function renderSnapshotCatalog() {
       const highlighted = target.closest('[data-ga-highlight-ids]');
       snapshotIds.push(...(highlighted?.getAttribute('data-ga-highlight-ids') || '').split(/\\s+/).filter(Boolean));
 
+      const idOccurrences = [];
       for (const snapshotId of snapshotIds) {
         const record = recordByOccurrenceId.get(occurrenceId(currentRun.runId, snapshotId));
         const occurrence = record?.occurrences.find((item) => item.runId === currentRun.runId && item.snapshotId === snapshotId);
-        if (occurrence) return occurrence;
+        if (occurrence) idOccurrences.push(occurrence);
       }
+      const exactStateOccurrence = currentTracking
+        ? idOccurrences.find(
+            (occurrence) =>
+              occurrence.ga_label === currentTracking.gaLabel &&
+              occurrence.ga_action === currentTracking.gaAction &&
+              occurrence.ga_area === currentTracking.gaArea,
+          )
+        : null;
+      if (exactStateOccurrence) return exactStateOccurrence;
+      if (idOccurrences.length) return idOccurrences[0];
 
-      const labelElement = target.closest('[ga_label]');
-      if (!labelElement) return null;
-      const gaLabel = labelElement.getAttribute('ga_label') || '';
-      const rawGaAction = labelElement.closest('[ga_action]')?.getAttribute('ga_action') || null;
-      const gaAction = normalizeTrackingAction(currentTarget.id, currentRun.date, rawGaAction);
-      const anchor = labelElement.closest('a[href]');
-      const href = anchor?.href || null;
+      if (!currentTracking) return null;
+      const { gaLabel, gaAction, gaArea, href } = currentTracking;
 
       for (const record of periodRecords) {
         const occurrence = record.occurrences.find(
-          (item) => item.runId === currentRun.runId && item.ga_label === gaLabel && item.ga_action === gaAction && (!href || item.href === href),
+          (item) =>
+            item.runId === currentRun.runId &&
+            item.ga_label === gaLabel &&
+            item.ga_action === gaAction &&
+            item.ga_area === gaArea &&
+            (!href || item.href === href),
         );
         if (occurrence) return occurrence;
       }
@@ -6018,6 +6651,7 @@ function renderSnapshotCatalog() {
       resetPreviewContext(doc);
       revealTargetContext(target);
       revealHiddenContext(target);
+      syncToggleStateForOccurrence(doc, target, occurrence);
       const highlightTarget = resolveHighlightTarget(doc, target);
 
       highlightTarget.scrollIntoView({ block: 'center', inline: 'center', behavior: 'auto' });
@@ -6035,6 +6669,7 @@ function renderSnapshotCatalog() {
 
       revealTargetContext(focusTarget);
       revealHiddenContext(focusTarget);
+      syncToggleStateForOccurrence(doc, focusTarget, focusOccurrence);
 
       const currentRunOccurrences = record.occurrences
         .filter((occurrence) => occurrence.runId === focusOccurrence.runId)
@@ -6073,11 +6708,15 @@ function renderSnapshotCatalog() {
           return normalizeTrackingAction(occurrence.targetId, occurrence.date, rawAction) === occurrence.ga_action;
         },
       );
-      const hrefMatches = actionMatches.filter((element) => {
+      const areaMatches = actionMatches.filter((element) => {
+        const actionElement = element.closest('[ga_action]');
+        return findGaArea(element, actionElement) === (occurrence.ga_area || '');
+      });
+      const hrefMatches = areaMatches.filter((element) => {
         const anchor = element.closest('a[href]');
         return occurrence.href && anchor?.href === occurrence.href;
       });
-      const fallback = hrefMatches[0] || actionMatches[0] || candidates[0] || null;
+      const fallback = hrefMatches[0] || areaMatches[0] || actionMatches[0] || candidates[0] || null;
       return fallback?.closest('a,button,input,select,textarea,[role="button"],[onclick],[tabindex]') || fallback || null;
     }
 
@@ -6248,6 +6887,9 @@ function renderSnapshotCatalog() {
       const className = element.getAttribute?.('class');
       const styleText = element.getAttribute?.('style');
       const hadHidden = element.hasAttribute?.('hidden') || false;
+      const ariaExpanded = element.getAttribute?.('aria-expanded');
+      const gaArea = element.getAttribute?.('ga_area');
+      const title = element.getAttribute?.('title');
 
       revealRestorers.push(() => {
         if (!element.isConnected) return;
@@ -6259,7 +6901,16 @@ function renderSnapshotCatalog() {
 
         if (hadHidden) element.setAttribute?.('hidden', '');
         else element.removeAttribute?.('hidden');
+
+        restoreAttribute(element, 'aria-expanded', ariaExpanded);
+        restoreAttribute(element, 'ga_area', gaArea);
+        restoreAttribute(element, 'title', title);
       });
+
+      function restoreAttribute(target, name, value) {
+        if (value === null || value === undefined) target.removeAttribute?.(name);
+        else target.setAttribute?.(name, value);
+      }
     }
 
     function resolveHighlightTarget(doc, element) {
@@ -6394,8 +7045,24 @@ function renderSnapshotCatalog() {
       return period.start + ' ~ ' + period.end;
     }
 
-    function ga4MetricKey(action, label) {
-      return encodeURIComponent(action || '(missing)') + '::' + encodeURIComponent(label || '');
+    function ga4MetricKey(action, area, label) {
+      const encodedAction = encodeURIComponent(action || '(missing)');
+      const encodedLabel = encodeURIComponent(label || '');
+      if (!area) return encodedAction + '::' + encodedLabel;
+      return encodedAction + '::' + encodeURIComponent(area) + '::' + encodedLabel;
+    }
+
+    function isExcludedTrackingAction(targetId, action) {
+      const excludedActions = PAGE_CONFIGS[targetId]?.excludedActions || [];
+      return excludedActions.includes(String(action || '').trim());
+    }
+
+    function trackingColumnCount() {
+      return 4;
+    }
+
+    function tableColumnCount() {
+      return 7;
     }
 
     function emptyMetrics() {
@@ -6430,6 +7097,16 @@ function renderSnapshotCatalog() {
           date <= rule.endDate;
       });
       return correction?.canonicalAction || rawAction;
+    }
+
+    function findGaArea(labelElement, actionElement) {
+      let current = labelElement;
+      while (current) {
+        if (current.hasAttribute?.('ga_area')) return (current.getAttribute('ga_area') || '').trim();
+        if (current === actionElement) break;
+        current = current.parentElement;
+      }
+      return '';
     }
 
     function formatMetric(value, metricName) {
@@ -6528,7 +7205,7 @@ function dateFromIso(value) {
 }
 
 function makePeriodKey(targetId, element) {
-  const base = [element.ga_action || '', element.ga_label || '', element.href || ''].join('|');
+  const base = [element.ga_action || '', element.ga_area || '', element.ga_label || '', element.href || ''].join('|');
   const ordinal = element.sourceIndex || element.index || 1;
   return `${targetId}:${hashStringNode(base)}:${ordinal}`;
 }
@@ -6553,6 +7230,7 @@ function toCsv(elements) {
     'sourceIndex',
     'status',
     'ga_action',
+    'ga_area',
     'ga_label',
     'text',
     'href',
@@ -6579,6 +7257,7 @@ function toCsv(elements) {
       element.sourceIndex,
       element.status,
       element.ga_action,
+      element.ga_area,
       element.ga_label,
       element.text,
       element.href,
