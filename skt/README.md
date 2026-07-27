@@ -42,6 +42,9 @@ Do not commit these files or folders:
 - `.env`
 
 The GA4 service account JSON must exist on the host and is mounted into the container as read-only.
+Runtime GA4 metrics use Data API v1alpha Report Tasks with `samplingLevel: UNSAMPLED`.
+This mode requires a Google Analytics 360 property. Each date-range change creates a fresh report
+task; concurrent requests for the same page and range share only the in-progress request.
 
 Gemini insights default to the lower-cost `gemini-3-flash-preview`. Users can select
 `gemini-3.1-pro-preview` with high thinking when they need a more precise analysis.

@@ -10,7 +10,10 @@ import {
   SKT_PAGE_CONFIGS,
   usesGaAreaForTargetId,
 } from './skt-page-config.mjs';
-import { SKT_TRACKING_CORRECTIONS } from './skt-tracking-normalization.mjs';
+import {
+  SKT_MAIN_LABEL_TRIM_START_DATE,
+  SKT_TRACKING_CORRECTIONS,
+} from './skt-tracking-normalization.mjs';
 
 const OUTPUT_ROOT = path.resolve('snapshots');
 const RUN_ID = process.env.RUN_ID || timestampForPath(new Date());
@@ -4639,6 +4642,7 @@ function renderSnapshotCatalog() {
   </main>
   <script>
     const TRACKING_CORRECTIONS = ${jsonForInlineScript(SKT_TRACKING_CORRECTIONS)};
+    const MAIN_LABEL_TRIM_START_DATE = ${jsonForInlineScript(SKT_MAIN_LABEL_TRIM_START_DATE)};
     const PAGE_CONFIGS = ${jsonForInlineScript(
       Object.fromEntries(SKT_PAGE_CONFIGS.map((config) => [config.id, config])),
     )};
@@ -5785,7 +5789,7 @@ function renderSnapshotCatalog() {
           if (isExcludedTrackingAction(targetId, rawAction)) continue;
           const action = normalizeTrackingAction(targetId, run.date, rawAction);
           const area = element.ga_area || '';
-          const label = element.ga_label || '';
+          const label = normalizeTrackingLabel(targetId, run.date, element.ga_label);
           const identity = [targetId, action, area, label, element.href || ''].join('|');
           const ordinal = (identityCounts.get(identity) || 0) + 1;
           identityCounts.set(identity, ordinal);
@@ -6592,7 +6596,11 @@ function renderSnapshotCatalog() {
       const actionElement = labelElement?.closest('[ga_action]') || null;
       const currentTracking = labelElement
         ? {
-            gaLabel: labelElement.getAttribute('ga_label') || '',
+            gaLabel: normalizeTrackingLabel(
+              currentTarget.id,
+              currentRun.date,
+              labelElement.getAttribute('ga_label'),
+            ),
             gaAction: normalizeTrackingAction(
               currentTarget.id,
               currentRun.date,
@@ -6703,7 +6711,12 @@ function renderSnapshotCatalog() {
       }
 
       const candidates = Array.from(doc.querySelectorAll('[ga_label]')).filter(
-        (element) => element.getAttribute('ga_label') === occurrence.ga_label,
+        (element) =>
+          normalizeTrackingLabel(
+            occurrence.targetId,
+            occurrence.date,
+            element.getAttribute('ga_label'),
+          ) === occurrence.ga_label,
       );
       const actionMatches = candidates.filter(
         (element) => {
@@ -7100,6 +7113,15 @@ function renderSnapshotCatalog() {
           date <= rule.endDate;
       });
       return correction?.canonicalAction || rawAction;
+    }
+
+    function normalizeTrackingLabel(targetId, date, label) {
+      const rawLabel = label === null || label === undefined ? '' : String(label);
+      const pageType = PAGE_CONFIGS[targetId]?.pageType || 'main';
+      const shouldTrim =
+        pageType === 'exhibition' ||
+        (pageType === 'main' && String(date || '') >= MAIN_LABEL_TRIM_START_DATE);
+      return shouldTrim ? rawLabel.trim() : rawLabel;
     }
 
     function findGaArea(labelElement, actionElement) {

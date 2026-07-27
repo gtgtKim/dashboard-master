@@ -4,6 +4,8 @@ import {
   canonicalTrackingBase,
   normalizeSktGaAction,
   normalizeSktGaActionForRange,
+  normalizeSktGaLabel,
+  normalizeSktGaLabelForRange,
 } from '../scripts/skt-tracking-normalization.mjs';
 
 test('normalizes the mobile main banner typo only inside the correction period', () => {
@@ -110,4 +112,101 @@ test('normalizes GA4 rows when the requested range intersects the correction per
     }),
     '모바일 메인 배너',
   );
+});
+
+test('merges the PC main banner action alias for snapshots and GA4 ranges', () => {
+  assert.equal(
+    normalizeSktGaAction({
+      targetId: 'pc-main',
+      date: '2026-06-25',
+      action: '메인배너',
+    }),
+    '메인 배너',
+  );
+  assert.equal(
+    normalizeSktGaActionForRange({
+      targetId: 'pc-main',
+      startDate: '2026-06-25',
+      endDate: '2026-07-27',
+      action: '메인배너',
+    }),
+    '메인 배너',
+  );
+  assert.equal(
+    normalizeSktGaAction({
+      targetId: 'mobile-main',
+      date: '2026-07-27',
+      action: '메인배너',
+    }),
+    '메인배너',
+  );
+});
+
+test('trims main labels from 2026-06-25 and keeps earlier labels unchanged', () => {
+  assert.equal(
+    normalizeSktGaLabel({
+      targetId: 'pc-main',
+      date: '2026-06-25',
+      label: '  메인 라벨  ',
+    }),
+    '메인 라벨',
+  );
+  assert.equal(
+    normalizeSktGaLabel({
+      targetId: 'mobile-main',
+      date: '2026-06-24',
+      label: '  메인 라벨  ',
+    }),
+    '  메인 라벨  ',
+  );
+  assert.equal(
+    normalizeSktGaLabelForRange({
+      targetId: 'mobile-main',
+      startDate: '2026-06-25',
+      endDate: '2026-07-27',
+      label: '  메인 라벨  ',
+    }),
+    '메인 라벨',
+  );
+});
+
+test('always trims exhibition labels without changing internal whitespace', () => {
+  assert.equal(
+    normalizeSktGaLabel({
+      targetId: 'pc-exhibition-p00000494',
+      date: '2026-07-27',
+      label: '  Galaxy  Z Fold8  ',
+    }),
+    'Galaxy  Z Fold8',
+  );
+  assert.equal(
+    normalizeSktGaLabelForRange({
+      targetId: 'mobile-exhibition-p00000494',
+      startDate: '2026-07-27',
+      endDate: '2026-07-27',
+      label: '\n자세히 보기\t',
+    }),
+    '자세히 보기',
+  );
+});
+
+test('uses trimmed labels in canonical element identity', () => {
+  const spaced = canonicalTrackingBase({
+    targetId: 'pc-main',
+    date: '2026-06-25',
+    action: '메인배너',
+    label: ' 배너 라벨 ',
+    href: '/event',
+  });
+  const normalized = canonicalTrackingBase({
+    targetId: 'pc-main',
+    date: '2026-07-27',
+    action: '메인 배너',
+    label: '배너 라벨',
+    href: '/event',
+  });
+
+  assert.equal(spaced.identity, normalized.identity);
+  assert.equal(spaced.action, '메인 배너');
+  assert.equal(spaced.label, '배너 라벨');
 });

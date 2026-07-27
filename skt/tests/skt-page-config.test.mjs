@@ -1,9 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  buildGa4DimensionFilter,
+  buildUnsampledReportDefinition,
+  GA4_CONFIG,
   ga4CategoryForTargetId,
   ga4HostnameForTargetId,
   makeGa4MetricKey,
+  PC_MAIN_BANNER_ACTION_ALIASES,
 } from '../scripts/ga4-data-api.mjs';
 import {
   assertSktDataStartDate,
@@ -73,4 +77,30 @@ test('treats ga_area as part of an element identity', () => {
   });
 
   assert.notEqual(first.identity, second.identity);
+});
+
+test('builds UNSAMPLED report tasks with totals', () => {
+  const definition = buildUnsampledReportDefinition({
+    startDate: '2026-06-25',
+    endDate: '2026-07-27',
+    dimensions: [{ name: GA4_CONFIG.dimensions.eventAction }],
+    metrics: [{ name: 'eventCount' }],
+    dimensionFilter: buildGa4DimensionFilter({ eventCategory: 'TWD_main' }),
+  });
+
+  assert.equal(definition.samplingLevel, 'UNSAMPLED');
+  assert.deepEqual(definition.metricAggregations, ['TOTAL']);
+  assert.equal(definition.limit, 250000);
+});
+
+test('filters the PC main banner alias report by both action spellings', () => {
+  const filter = buildGa4DimensionFilter({
+    eventCategory: 'TWD_main',
+    actionAliases: PC_MAIN_BANNER_ACTION_ALIASES,
+  });
+  const actionFilter = filter.andGroup.expressions.at(-1).filter;
+
+  assert.equal(actionFilter.fieldName, GA4_CONFIG.dimensions.eventAction);
+  assert.deepEqual(actionFilter.inListFilter.values, ['메인 배너', '메인배너']);
+  assert.equal(actionFilter.inListFilter.caseSensitive, true);
 });

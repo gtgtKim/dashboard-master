@@ -1,3 +1,7 @@
+import { getSktPageConfig } from './skt-page-config.mjs';
+
+export const SKT_MAIN_LABEL_TRIM_START_DATE = '2026-06-25';
+
 export const SKT_TRACKING_CORRECTIONS = Object.freeze([
   Object.freeze({
     id: 'mobile-main-banner-2026-07',
@@ -5,6 +9,14 @@ export const SKT_TRACKING_CORRECTIONS = Object.freeze([
     startDate: '2026-07-08',
     endDate: '2026-07-20',
     rawAction: '모바일 메인 배너',
+    canonicalAction: '메인 배너',
+  }),
+  Object.freeze({
+    id: 'pc-main-banner-action-alias',
+    targetId: 'pc-main',
+    startDate: '0000-01-01',
+    endDate: '9999-12-31',
+    rawAction: '메인배너',
     canonicalAction: '메인 배너',
   }),
 ]);
@@ -35,16 +47,39 @@ export function normalizeSktGaActionForRange({ targetId, startDate, endDate, act
   return correction?.canonicalAction || rawAction;
 }
 
+export function normalizeSktGaLabel({ targetId, date, label = '' }) {
+  const rawLabel = String(label ?? '');
+  const pageType = getSktPageConfig(targetId).pageType;
+  const shouldTrim =
+    pageType === 'exhibition' ||
+    (pageType === 'main' && String(date || '') >= SKT_MAIN_LABEL_TRIM_START_DATE);
+
+  return shouldTrim ? rawLabel.trim() : rawLabel;
+}
+
+export function normalizeSktGaLabelForRange({ targetId, startDate, endDate, label = '' }) {
+  const rawLabel = String(label ?? '');
+  const pageType = getSktPageConfig(targetId).pageType;
+  const shouldTrim =
+    pageType === 'exhibition' ||
+    (pageType === 'main' && String(endDate || startDate || '') >= SKT_MAIN_LABEL_TRIM_START_DATE);
+
+  return shouldTrim ? rawLabel.trim() : rawLabel;
+}
+
 export function normalizeSktTracking({ targetId, date, action, area = '', label = '' }) {
   const rawAction = action || '(missing)';
   const canonicalAction = normalizeSktGaAction({ targetId, date, action: rawAction });
+  const rawLabel = String(label ?? '');
+  const canonicalLabel = normalizeSktGaLabel({ targetId, date, label: rawLabel });
 
   return {
     action: canonicalAction,
     area: area || '',
-    label: label || '',
+    label: canonicalLabel,
     rawAction,
-    corrected: canonicalAction !== rawAction,
+    rawLabel,
+    corrected: canonicalAction !== rawAction || canonicalLabel !== rawLabel,
   };
 }
 
