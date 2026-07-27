@@ -11,7 +11,7 @@ import {
   usesGaAreaForTargetId,
 } from './skt-page-config.mjs';
 import {
-  SKT_MAIN_LABEL_TRIM_START_DATE,
+  SKT_MAIN_TRACKING_TRIM_START_DATE,
   SKT_TRACKING_CORRECTIONS,
 } from './skt-tracking-normalization.mjs';
 
@@ -4642,7 +4642,7 @@ function renderSnapshotCatalog() {
   </main>
   <script>
     const TRACKING_CORRECTIONS = ${jsonForInlineScript(SKT_TRACKING_CORRECTIONS)};
-    const MAIN_LABEL_TRIM_START_DATE = ${jsonForInlineScript(SKT_MAIN_LABEL_TRIM_START_DATE)};
+    const MAIN_TRACKING_TRIM_START_DATE = ${jsonForInlineScript(SKT_MAIN_TRACKING_TRIM_START_DATE)};
     const PAGE_CONFIGS = ${jsonForInlineScript(
       Object.fromEntries(SKT_PAGE_CONFIGS.map((config) => [config.id, config])),
     )};
@@ -7105,7 +7105,14 @@ function renderSnapshotCatalog() {
     }
 
     function normalizeTrackingAction(targetId, date, action) {
-      const rawAction = action || '(missing)';
+      const originalAction = action || '(missing)';
+      const pageType = PAGE_CONFIGS[targetId]?.pageType || 'main';
+      const shouldTrim =
+        pageType === 'main' &&
+        String(date || '') >= MAIN_TRACKING_TRIM_START_DATE;
+      const rawAction = shouldTrim
+        ? String(originalAction).trim() || '(missing)'
+        : originalAction;
       const correction = TRACKING_CORRECTIONS.find((rule) => {
         return rule.targetId === targetId &&
           rule.rawAction === rawAction &&
@@ -7120,7 +7127,7 @@ function renderSnapshotCatalog() {
       const pageType = PAGE_CONFIGS[targetId]?.pageType || 'main';
       const shouldTrim =
         pageType === 'exhibition' ||
-        (pageType === 'main' && String(date || '') >= MAIN_LABEL_TRIM_START_DATE);
+        (pageType === 'main' && String(date || '') >= MAIN_TRACKING_TRIM_START_DATE);
       return shouldTrim ? rawLabel.trim() : rawLabel;
     }
 

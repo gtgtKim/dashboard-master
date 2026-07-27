@@ -1,6 +1,6 @@
 import { getSktPageConfig } from './skt-page-config.mjs';
 
-export const SKT_MAIN_LABEL_TRIM_START_DATE = '2026-06-25';
+export const SKT_MAIN_TRACKING_TRIM_START_DATE = '2026-06-25';
 
 export const SKT_TRACKING_CORRECTIONS = Object.freeze([
   Object.freeze({
@@ -23,28 +23,34 @@ export const SKT_TRACKING_CORRECTIONS = Object.freeze([
 
 export function normalizeSktGaAction({ targetId, date, action }) {
   const rawAction = action || '(missing)';
+  const normalizedAction = normalizeSktMainGaActionValue({ targetId, date, action: rawAction });
   const correction = SKT_TRACKING_CORRECTIONS.find(
     (rule) =>
       rule.targetId === targetId &&
-      rule.rawAction === rawAction &&
+      rule.rawAction === normalizedAction &&
       date >= rule.startDate &&
       date <= rule.endDate,
   );
 
-  return correction?.canonicalAction || rawAction;
+  return correction?.canonicalAction || normalizedAction;
 }
 
 export function normalizeSktGaActionForRange({ targetId, startDate, endDate, action }) {
   const rawAction = action || '(missing)';
+  const normalizedAction = normalizeSktMainGaActionValue({
+    targetId,
+    date: endDate || startDate,
+    action: rawAction,
+  });
   const correction = SKT_TRACKING_CORRECTIONS.find(
     (rule) =>
       rule.targetId === targetId &&
-      rule.rawAction === rawAction &&
+      rule.rawAction === normalizedAction &&
       startDate <= rule.endDate &&
       endDate >= rule.startDate,
   );
 
-  return correction?.canonicalAction || rawAction;
+  return correction?.canonicalAction || normalizedAction;
 }
 
 export function normalizeSktGaLabel({ targetId, date, label = '' }) {
@@ -52,7 +58,7 @@ export function normalizeSktGaLabel({ targetId, date, label = '' }) {
   const pageType = getSktPageConfig(targetId).pageType;
   const shouldTrim =
     pageType === 'exhibition' ||
-    (pageType === 'main' && String(date || '') >= SKT_MAIN_LABEL_TRIM_START_DATE);
+    (pageType === 'main' && String(date || '') >= SKT_MAIN_TRACKING_TRIM_START_DATE);
 
   return shouldTrim ? rawLabel.trim() : rawLabel;
 }
@@ -62,7 +68,7 @@ export function normalizeSktGaLabelForRange({ targetId, startDate, endDate, labe
   const pageType = getSktPageConfig(targetId).pageType;
   const shouldTrim =
     pageType === 'exhibition' ||
-    (pageType === 'main' && String(endDate || startDate || '') >= SKT_MAIN_LABEL_TRIM_START_DATE);
+    (pageType === 'main' && String(endDate || startDate || '') >= SKT_MAIN_TRACKING_TRIM_START_DATE);
 
   return shouldTrim ? rawLabel.trim() : rawLabel;
 }
@@ -89,4 +95,11 @@ export function canonicalTrackingBase({ targetId, date, action, area = '', label
     ...tracking,
     identity: [targetId, tracking.action, tracking.area, tracking.label, href || ''].join('|'),
   };
+}
+
+function normalizeSktMainGaActionValue({ targetId, date, action }) {
+  const rawAction = String(action || '(missing)');
+  const isMainPage = getSktPageConfig(targetId).pageType === 'main';
+  if (!isMainPage || String(date || '') < SKT_MAIN_TRACKING_TRIM_START_DATE) return rawAction;
+  return rawAction.trim() || '(missing)';
 }

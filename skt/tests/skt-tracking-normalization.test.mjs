@@ -210,3 +210,50 @@ test('uses trimmed labels in canonical element identity', () => {
   assert.equal(spaced.action, '메인 배너');
   assert.equal(spaced.label, '배너 라벨');
 });
+
+test('trims main actions from 2026-06-25 before applying aliases', () => {
+  assert.equal(
+    normalizeSktGaAction({
+      targetId: 'mobile-main',
+      date: '2026-07-27',
+      action: ' Galaxy Z Fold8 Ultra | Fold8 | Flip8 ',
+    }),
+    'Galaxy Z Fold8 Ultra | Fold8 | Flip8',
+  );
+  assert.equal(
+    normalizeSktGaAction({
+      targetId: 'pc-main',
+      date: '2026-07-27',
+      action: ' 메인배너 ',
+    }),
+    '메인 배너',
+  );
+  assert.equal(
+    normalizeSktGaActionForRange({
+      targetId: 'pc-main',
+      startDate: '2026-06-25',
+      endDate: '2026-07-27',
+      action: ' 메인배너 ',
+    }),
+    '메인 배너',
+  );
+});
+
+test('keeps main actions before 2026-06-25 and exhibition actions unchanged', () => {
+  assert.equal(
+    normalizeSktGaAction({
+      targetId: 'mobile-main',
+      date: '2026-06-24',
+      action: ' 메인 action ',
+    }),
+    ' 메인 action ',
+  );
+  assert.equal(
+    normalizeSktGaAction({
+      targetId: 'pc-exhibition-p00000494',
+      date: '2026-07-27',
+      action: ' 기획전 action ',
+    }),
+    ' 기획전 action ',
+  );
+});
