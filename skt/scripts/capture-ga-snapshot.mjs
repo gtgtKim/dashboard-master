@@ -7061,11 +7061,11 @@ function renderSnapshotCatalog() {
     }
 
     function trackingColumnCount() {
-      return 4;
+      return showGaArea ? 4 : 3;
     }
 
     function tableColumnCount() {
-      return 7;
+      return showGaArea ? 7 : 6;
     }
 
     function emptyMetrics() {
