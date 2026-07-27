@@ -143,9 +143,11 @@ async function handleGa4Metrics(url, response) {
     const result = await queryGa4Metrics({ targetId, startDate, endDate });
     sendJson(response, 200, { status: 'ok', ...result });
   } catch (error) {
-    sendJson(response, 500, {
+    const message = error instanceof Error ? error.message : String(error);
+    const clientError = /must be YYYY-MM-DD|earlier than or equal|on or after/i.test(message);
+    sendJson(response, clientError ? 400 : 500, {
       status: 'error',
-      error: error instanceof Error ? error.message : String(error),
+      error: message,
     });
   }
 }
@@ -170,7 +172,7 @@ async function handleAiInsights(url, response) {
     sendJson(response, 200, result);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    const clientError = /required|must be flash or pro|must be YYYY-MM-DD|earlier than or equal/i.test(message);
+    const clientError = /required|must be flash or pro|must be YYYY-MM-DD|earlier than or equal|on or after/i.test(message);
     sendJson(response, clientError ? 400 : 500, {
       status: 'error',
       error: message,
@@ -218,7 +220,7 @@ async function handleAiFollowUp(request, response) {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const clientError =
-      /required|characters or fewer|must be flash or pro|must be YYYY-MM-DD|earlier than or equal/i.test(message);
+      /required|characters or fewer|must be flash or pro|must be YYYY-MM-DD|earlier than or equal|on or after/i.test(message);
     sendJson(response, clientError ? 400 : 500, {
       status: 'error',
       error: message,

@@ -10,6 +10,8 @@ export const SKT_EXHIBITION_FIXED_ACTIONS = Object.freeze([
   '고정 퀵 메뉴',
 ]);
 
+export const SKT_EXHIBITION_DATA_AVAILABLE_FROM = '2026-07-27';
+
 export const SKT_PAGE_CONFIGS = Object.freeze([
   Object.freeze({
     id: 'mobile-main',
@@ -18,6 +20,7 @@ export const SKT_PAGE_CONFIGS = Object.freeze([
     device: 'mobile',
     pageType: 'main',
     eventCategory: 'MTWD_main',
+    dataAvailableFrom: '',
     usesGaArea: false,
     requireMobileHostname: true,
     excludedActions: Object.freeze([]),
@@ -30,6 +33,7 @@ export const SKT_PAGE_CONFIGS = Object.freeze([
     device: 'pc',
     pageType: 'main',
     eventCategory: 'TWD_main',
+    dataAvailableFrom: '',
     usesGaArea: false,
     requireMobileHostname: false,
     excludedActions: Object.freeze([]),
@@ -43,6 +47,7 @@ export const SKT_PAGE_CONFIGS = Object.freeze([
     pageType: 'exhibition',
     exhibitionId: 'P00000494',
     eventCategory: 'MTWD_exhibition - P00000494',
+    dataAvailableFrom: SKT_EXHIBITION_DATA_AVAILABLE_FROM,
     usesGaArea: true,
     requireMobileHostname: true,
     excludedActions: SKT_EXHIBITION_LEGACY_ACTIONS,
@@ -56,6 +61,7 @@ export const SKT_PAGE_CONFIGS = Object.freeze([
     pageType: 'exhibition',
     exhibitionId: 'P00000494',
     eventCategory: 'TWD_exhibition - P00000494',
+    dataAvailableFrom: SKT_EXHIBITION_DATA_AVAILABLE_FROM,
     usesGaArea: true,
     requireMobileHostname: false,
     excludedActions: SKT_EXHIBITION_LEGACY_ACTIONS,
@@ -78,6 +84,7 @@ export function getSktPageConfig(targetId) {
     device: mobile ? 'mobile' : 'pc',
     pageType: 'main',
     eventCategory: mobile ? 'MTWD_main' : 'TWD_main',
+    dataAvailableFrom: '',
     usesGaArea: false,
     requireMobileHostname: mobile,
     excludedActions: [],
@@ -87,6 +94,17 @@ export function getSktPageConfig(targetId) {
 
 export function usesGaAreaForTargetId(targetId) {
   return Boolean(getSktPageConfig(targetId).usesGaArea);
+}
+
+export function dataAvailableFromForTargetId(targetId) {
+  return getSktPageConfig(targetId).dataAvailableFrom || '';
+}
+
+export function assertSktDataStartDate(targetId, startDate) {
+  const availableFrom = dataAvailableFromForTargetId(targetId);
+  if (availableFrom && String(startDate || '') < availableFrom) {
+    throw new RangeError(`startDate for ${targetId} must be on or after ${availableFrom}.`);
+  }
 }
 
 export function isExcludedSktGaAction(targetId, action) {

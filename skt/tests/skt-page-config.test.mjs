@@ -6,6 +6,8 @@ import {
   makeGa4MetricKey,
 } from '../scripts/ga4-data-api.mjs';
 import {
+  assertSktDataStartDate,
+  dataAvailableFromForTargetId,
   isExcludedSktGaAction,
   isIncludedSktFixedAction,
   usesGaAreaForTargetId,
@@ -17,6 +19,18 @@ test('uses the exhibition GA4 categories and mobile hostname filter', () => {
   assert.equal(ga4CategoryForTargetId('mobile-exhibition-p00000494'), 'MTWD_exhibition - P00000494');
   assert.equal(ga4HostnameForTargetId('pc-exhibition-p00000494'), null);
   assert.equal(ga4HostnameForTargetId('mobile-exhibition-p00000494'), 'm.shop.tworld.co.kr');
+});
+
+test('limits exhibition data queries to 2026-07-27 and later', () => {
+  assert.equal(dataAvailableFromForTargetId('pc-exhibition-p00000494'), '2026-07-27');
+  assert.equal(dataAvailableFromForTargetId('mobile-exhibition-p00000494'), '2026-07-27');
+  assert.equal(dataAvailableFromForTargetId('pc-main'), '');
+  assert.doesNotThrow(() => assertSktDataStartDate('pc-exhibition-p00000494', '2026-07-27'));
+  assert.throws(
+    () => assertSktDataStartDate('mobile-exhibition-p00000494', '2026-07-26'),
+    /must be on or after 2026-07-27/,
+  );
+  assert.doesNotThrow(() => assertSktDataStartDate('mobile-main', '2026-06-25'));
 });
 
 test('enables ga_area and legacy action exclusions only for exhibition pages', () => {

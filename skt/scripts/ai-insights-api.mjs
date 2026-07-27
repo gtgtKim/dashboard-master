@@ -3,7 +3,11 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { makeGa4MetricKey, queryGa4Metrics } from './ga4-data-api.mjs';
-import { getSktPageConfig, isExcludedSktGaAction } from './skt-page-config.mjs';
+import {
+  assertSktDataStartDate,
+  getSktPageConfig,
+  isExcludedSktGaAction,
+} from './skt-page-config.mjs';
 import { canonicalTrackingBase } from './skt-tracking-normalization.mjs';
 
 const SNAPSHOTS_ROOT = path.resolve('snapshots');
@@ -166,6 +170,7 @@ export async function queryAiInsights({ targetId, startDate, endDate, model = DE
   validateDate(endDate, 'endDate');
   if (!targetId) throw new Error('targetId is required.');
   if (startDate > endDate) throw new Error('startDate must be earlier than or equal to endDate.');
+  assertSktDataStartDate(targetId, startDate);
 
   const modelProfile = resolveGeminiModelProfile(model);
   const cacheVersion = insightCacheVersion(modelProfile);
@@ -217,6 +222,7 @@ export async function queryAiFollowUp({
   validateDate(endDate, 'endDate');
   if (!targetId) throw new Error('targetId is required.');
   if (startDate > endDate) throw new Error('startDate must be earlier than or equal to endDate.');
+  assertSktDataStartDate(targetId, startDate);
 
   const modelProfile = resolveGeminiModelProfile(model);
   const followUpCacheVersion = followUpCacheVersionFor(modelProfile);

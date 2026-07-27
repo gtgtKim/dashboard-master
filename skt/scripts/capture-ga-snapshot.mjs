@@ -4458,6 +4458,7 @@ function renderSnapshotCatalog() {
             <ul>
               <li><strong>페이지</strong>: T world Shop PC/MO 메인과 등록된 기획전 페이지를 선택합니다.</li>
               <li><strong>시작일/종료일</strong>: 선택한 기간에 존재했던 요소를 한눈에 봅니다.</li>
+              <li>P00000494 기획전 데이터는 <strong>2026-07-27</strong>부터 조회할 수 있습니다.</li>
               <li>기본 왼쪽 화면은 선택 기간 안에서 가장 최신 캡처본입니다.</li>
               <li>표에서 최신 캡처본에 없는 과거 요소를 클릭하면, 그 요소가 존재하던 기간 안의 가장 최신 캡처본으로 왼쪽 화면이 바뀝니다.</li>
             </ul>
@@ -4850,6 +4851,7 @@ function renderSnapshotCatalog() {
       endDateInput.max = maxDate;
       startDateInput.value = hash.start || minDate;
       endDateInput.value = hash.end || maxDate;
+      applyTargetDateBounds(targetSelect.value);
     }
 
     function installControls() {
@@ -5154,8 +5156,9 @@ function renderSnapshotCatalog() {
 
     async function updatePeriodView() {
       const periodRequestId = ++periodViewRequestId;
-      normalizeDateRange();
       const targetId = targetSelect.value;
+      applyTargetDateBounds(targetId);
+      normalizeDateRange();
       updateGaAreaVisibility(targetId);
       const runs = getSelectedRuns(targetId);
       const latestRun = runs.at(-1) || null;
@@ -7132,6 +7135,30 @@ function renderSnapshotCatalog() {
         startDateInput.value = endDateInput.value;
         endDateInput.value = start;
       }
+    }
+
+    function applyTargetDateBounds(targetId) {
+      const dates = runsAscending.map((run) => run.date).filter(Boolean);
+      const catalogMinDate = dates[0] || '';
+      const catalogMaxDate = dates.at(-1) || '';
+      const configuredMinDate = PAGE_CONFIGS[targetId]?.dataAvailableFrom || '';
+      const minDate = [catalogMinDate, configuredMinDate].filter(Boolean).sort().at(-1) || '';
+      const maxDate = catalogMaxDate && minDate && catalogMaxDate < minDate ? minDate : catalogMaxDate;
+
+      startDateInput.min = minDate;
+      startDateInput.max = maxDate;
+      endDateInput.min = minDate;
+      endDateInput.max = maxDate;
+
+      startDateInput.value = clampDate(startDateInput.value, minDate, maxDate, minDate);
+      endDateInput.value = clampDate(endDateInput.value, minDate, maxDate, maxDate || minDate);
+    }
+
+    function clampDate(value, minDate, maxDate, fallback) {
+      if (!value) return fallback || '';
+      if (minDate && value < minDate) return minDate;
+      if (maxDate && value > maxDate) return maxDate;
+      return value;
     }
 
     function updateHash() {

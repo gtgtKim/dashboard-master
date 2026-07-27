@@ -1,7 +1,11 @@
 import analyticsData from '@google-analytics/data';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { getSktPageConfig, usesGaAreaForTargetId } from './skt-page-config.mjs';
+import {
+  assertSktDataStartDate,
+  getSktPageConfig,
+  usesGaAreaForTargetId,
+} from './skt-page-config.mjs';
 import { normalizeSktGaActionForRange } from './skt-tracking-normalization.mjs';
 
 const { BetaAnalyticsDataClient } = analyticsData;
@@ -29,6 +33,7 @@ export async function queryGa4Metrics({ targetId, startDate, endDate }) {
   if (startDate > endDate) {
     throw new Error('startDate must be earlier than or equal to endDate.');
   }
+  assertSktDataStartDate(targetId, startDate);
 
   const keyFilename = await findGa4CredentialFile();
   if (!keyFilename) {
