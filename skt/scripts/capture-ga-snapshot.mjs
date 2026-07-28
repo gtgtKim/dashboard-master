@@ -821,6 +821,7 @@ async function saveHtmlArchives(context, page, outputDir, review) {
     disableScripts: true,
     inlineStylesheets: stylesheets.items,
     overlayElements: null,
+    forceScrollable: review.target.pageType === 'exhibition',
   });
   const contentFile = 'page-content.html';
   const staticFile = 'page-static.html';
@@ -846,7 +847,7 @@ async function saveHtmlArchives(context, page, outputDir, review) {
 }
 
 async function buildClonedHtml(page, options) {
-  return page.evaluate(({ disableScripts, inlineStylesheets, overlayElements }) => {
+  return page.evaluate(({ disableScripts, inlineStylesheets, overlayElements, forceScrollable }) => {
     const clone = document.documentElement.cloneNode(true);
     const head = ensureHead(clone);
     const body = ensureBody(clone);
@@ -869,6 +870,26 @@ async function buildClonedHtml(page, options) {
 
     if (inlineStylesheets?.length) {
       inlineStylesheetLinks(clone, inlineStylesheets);
+    }
+
+    if (forceScrollable) {
+      const scrollStyle = document.createElement('style');
+      scrollStyle.setAttribute('data-ga-snapshot-scroll-restore', 'true');
+      scrollStyle.textContent = `
+        html {
+          overflow-y: auto !important;
+          height: auto !important;
+          min-height: 100% !important;
+        }
+
+        body {
+          overflow-y: visible !important;
+          height: auto !important;
+          min-height: 100% !important;
+        }
+      `;
+      head.append(scrollStyle);
+      restoreRootScrollStyles(clone, body);
     }
 
     for (const element of [clone, body]) {
@@ -913,6 +934,15 @@ async function buildClonedHtml(page, options) {
         style.textContent = css;
         link.replaceWith(style);
       });
+    }
+
+    function restoreRootScrollStyles(root, nextBody) {
+      root.style.setProperty('overflow-y', 'auto', 'important');
+      root.style.setProperty('height', 'auto', 'important');
+      root.style.setProperty('min-height', '100%', 'important');
+      nextBody.style.setProperty('overflow-y', 'visible', 'important');
+      nextBody.style.setProperty('height', 'auto', 'important');
+      nextBody.style.setProperty('min-height', '100%', 'important');
     }
 
     function injectGaOverlay(nextHead, nextBody, items) {
@@ -3341,7 +3371,7 @@ function renderSnapshotCatalog() {
     }
 
     .help-button,
-    .insights-top-button {
+    .excel-download-button {
       white-space: nowrap;
     }
 
@@ -4064,6 +4094,11 @@ function renderSnapshotCatalog() {
       color: #0b6bcb;
     }
 
+    button:disabled {
+      cursor: default;
+      opacity: 0.55;
+    }
+
     .table-wrap {
       min-width: 0;
       min-height: 0;
@@ -4432,7 +4467,7 @@ function renderSnapshotCatalog() {
         </label>
       </div>
       <div class="stats" id="stats"></div>
-      <button class="insights-top-button" id="insightsTopButton" type="button">Gemini 인사이트</button>
+      <button class="excel-download-button" id="excelDownloadButton" type="button">Excel 다운로드</button>
       <button class="help-button" id="helpButton" type="button">도움말</button>
     </section>
     <section class="help-popover" id="introTip" hidden aria-live="polite">
@@ -4461,7 +4496,7 @@ function renderSnapshotCatalog() {
             <ul>
               <li><strong>페이지</strong>: T world Shop PC/MO 메인과 등록된 기획전 페이지를 선택합니다.</li>
               <li><strong>시작일/종료일</strong>: 선택한 기간에 존재했던 요소를 한눈에 봅니다.</li>
-              <li>P00000494 기획전 데이터는 <strong>2026-07-27</strong>부터 조회할 수 있습니다.</li>
+              <li>모든 기획전 데이터는 <strong>2026-07-28</strong>부터 조회할 수 있습니다.</li>
               <li>기본 왼쪽 화면은 선택 기간 안에서 가장 최신 캡처본입니다.</li>
               <li>표에서 최신 캡처본에 없는 과거 요소를 클릭하면, 그 요소가 존재하던 기간 안의 가장 최신 캡처본으로 왼쪽 화면이 바뀝니다.</li>
             </ul>
@@ -4472,8 +4507,11 @@ function renderSnapshotCatalog() {
               <li>이벤트명은 <strong>click</strong>입니다.</li>
               <li>메인은 PC <strong>TWD_main</strong>, MO <strong>MTWD_main</strong> 기준입니다.</li>
               <li>P00000494 기획전은 PC <strong>TWD_exhibition - P00000494</strong>, MO <strong>MTWD_exhibition - P00000494</strong> 기준입니다.</li>
-              <li>MO 조회에는 <strong>hostName = m.shop.tworld.co.kr</strong> 조건이 함께 적용됩니다.</li>
+              <li>P00000495 모바일 기획전은 <strong>MTWD - P00000495</strong> 기준입니다.</li>
+              <li>MO 조회에는 페이지에 따라 <strong>hostName = m.shop.tworld.co.kr</strong> 또는 <strong>my-shop.tworld.co.kr</strong> 조건이 함께 적용됩니다.</li>
               <li>기획전은 선택 값인 <strong>event_area</strong>를 화면의 <strong>ga_area</strong>와 추가로 매칭합니다.</li>
+              <li>최상단 총합은 표 행을 더하지 않고 선택 기간의 이벤트명·event_category·MO hostname 조건에 대한 GA4 <strong>TOTAL</strong> 집계를 직접 조회합니다.</li>
+              <li>대분류의 세션 수와 사용자 수는 하위 요소 수치를 더하지 않고 <strong>event_action</strong>만 dimension으로 둔 별도 보고서에서 가져옵니다.</li>
               <li>표의 수치는 <strong>값 (전체 대비 비율)</strong> 형식입니다.</li>
               <li>오늘 날짜를 포함하면 GA4 특성상 일반적으로 현재 시점 기준 약 4시간 전 데이터까지만 조회될 수 있습니다. 확정 데이터는 보통 다음 날 이후가 더 안정적입니다.</li>
             </ul>
@@ -4502,6 +4540,7 @@ function renderSnapshotCatalog() {
               <li>각 ga_action 그룹 행을 클릭하면 해당 그룹만 접거나 펼칩니다.</li>
               <li>검색창에서 ga_action, ga_area, ga_label, 유지기간을 검색할 수 있습니다.</li>
               <li>정렬 메뉴 또는 열 제목을 눌러 화면 순서, GA4 수치, 유지기간, GA 어트리뷰트 기준으로 정렬할 수 있습니다.</li>
+              <li>오른쪽 위 <strong>Excel 다운로드</strong>로 현재 선택 페이지·기간·검색·정렬 결과를 전체 펼침 기준의 엑셀 파일로 저장할 수 있습니다.</li>
               <li>열 경계선을 드래그해서 표 열 너비를 조정할 수 있습니다.</li>
               <li>왼쪽 화면과 표 사이 경계선을 드래그해서 화면 비율을 조정할 수 있습니다.</li>
             </ul>
@@ -4660,7 +4699,7 @@ function renderSnapshotCatalog() {
     const sortSelect = document.getElementById('sortSelect');
     const expandAllButton = document.getElementById('expandAll');
     const collapseAllButton = document.getElementById('collapseAll');
-    const insightsTopButton = document.getElementById('insightsTopButton');
+    const excelDownloadButton = document.getElementById('excelDownloadButton');
     const insightsTrigger = document.getElementById('insightsTrigger');
     const insightsHint = document.getElementById('insightsHint');
     const insightsHintClose = document.getElementById('insightsHintClose');
@@ -4736,6 +4775,11 @@ function renderSnapshotCatalog() {
         body: 'ga_action 그룹을 한 번에 펼치거나 접을 수 있습니다. 그룹 행을 클릭하면 해당 그룹만 따로 열고 닫을 수 있습니다.',
       },
       {
+        target: '#excelDownloadButton',
+        title: 'Excel 다운로드',
+        body: '현재 선택한 페이지와 기간의 표를 엑셀 파일로 저장합니다. 검색과 정렬은 반영하고, 접힌 대분류의 요소도 빠짐없이 포함합니다.',
+      },
+      {
         target: '#helpButton',
         title: '상세 도움말',
         body: '수집 로직, GA4 조회 기준, 유지기간 의미가 궁금하면 언제든 이 버튼을 눌러 자세한 도움말을 볼 수 있습니다.',
@@ -4746,6 +4790,7 @@ function renderSnapshotCatalog() {
     let catalog = { runs: [] };
     let runsAscending = [];
     let periodRecords = [];
+    let currentRenderedGroups = [];
     let recordByKey = new Map();
     let recordByOccurrenceId = new Map();
     let currentRun = null;
@@ -4770,6 +4815,8 @@ function renderSnapshotCatalog() {
     let periodViewRequestId = 0;
     let ga4RequestId = 0;
     let ga4RefreshTimer = null;
+    let contentBridgeRequestId = 0;
+    let excelExporting = false;
     let insightsRequestId = 0;
     let insightsPanelOpen = false;
     let followUpRequestId = 0;
@@ -4782,6 +4829,7 @@ function renderSnapshotCatalog() {
       state: 'idle',
       message: '대기',
       totals: emptyMetrics(),
+      actionMetrics: {},
       rowCount: 0,
     };
     let insightsStatus = {
@@ -4888,7 +4936,7 @@ function renderSnapshotCatalog() {
         for (const record of periodRecords) collapsedGroups.add(groupIdForAction(record.ga_action));
         renderPeriodRows();
       });
-      insightsTopButton.addEventListener('click', openGeminiInsights);
+      excelDownloadButton.addEventListener('click', downloadExcel);
       insightsTrigger.addEventListener('click', openGeminiInsights);
       insightsHintClose.addEventListener('click', (event) => {
         event.preventDefault();
@@ -4947,6 +4995,7 @@ function renderSnapshotCatalog() {
       contentFrame.addEventListener('load', () => {
         scheduleLayoutSync();
         installContentClickBridge();
+        scheduleContentBridgeInstall(contentBridgeRequestId);
         if (pendingRecordFocus) {
           highlightRecord(pendingRecordFocus.record, pendingRecordFocus.focusOccurrence);
           pendingRecordFocus = null;
@@ -4956,6 +5005,8 @@ function renderSnapshotCatalog() {
           pendingOccurrence = null;
         }
       });
+      contentFrame.addEventListener('pointerenter', installContentClickBridge);
+      contentFrame.addEventListener('focus', installContentClickBridge);
 
       if (window.ResizeObserver) {
         const observer = new ResizeObserver(scheduleLayoutSync);
@@ -5174,10 +5225,12 @@ function renderSnapshotCatalog() {
         state: runs.length ? 'loading' : 'idle',
         message: runs.length ? '조회 중' : '대기',
         totals: emptyMetrics(),
+        actionMetrics: {},
         rowCount: 0,
       };
       resetGeminiInsights(runs.length);
       periodRecords = [];
+      currentRenderedGroups = [];
       recordByKey = new Map();
       recordByOccurrenceId = new Map();
       activeRecordKey = null;
@@ -5258,6 +5311,7 @@ function renderSnapshotCatalog() {
           message: '서버 필요',
           detail: 'GA4 실시간 조회는 npm run serve 또는 배포 서버에서 열어야 합니다.',
           totals: emptyMetrics(),
+          actionMetrics: {},
           rowCount: 0,
         };
         renderPeriodRows();
@@ -5284,8 +5338,13 @@ function renderSnapshotCatalog() {
           state: 'ok',
           message: 'ok',
           totals: payload.totals || sumMetrics(periodRecords.map((record) => record.ga4)),
+          actionMetrics: payload.actionMetrics || {},
           rowCount: payload.rowCount || 0,
           eventCategory: payload.eventCategory || '',
+          eventName: payload.eventName || 'click',
+          hostname: payload.hostname || '',
+          queryMode: payload.queryMode || '',
+          samplingLevel: payload.samplingLevel || '',
         };
       } catch (error) {
         if (requestId !== ga4RequestId) return;
@@ -5294,6 +5353,7 @@ function renderSnapshotCatalog() {
           message: '오류',
           detail: error instanceof Error ? error.message : String(error),
           totals: emptyMetrics(),
+          actionMetrics: {},
           rowCount: 0,
         };
         applyGa4Metrics({});
@@ -5423,7 +5483,6 @@ function renderSnapshotCatalog() {
         insightsStatus.state === 'loading' ||
         insightsStatus.state === 'disabled' ||
         followUpState.state === 'loading';
-      insightsTopButton.disabled = isBusyOrDisabled;
       insightsTrigger.disabled = isBusyOrDisabled;
       insightsCostNote.hidden = insightsModelSelect.value !== 'pro';
       const showGeminiHint = insightsStatus.state === 'idle' && !insightsPanelOpen && !geminiHintDismissed;
@@ -5939,7 +5998,15 @@ function renderSnapshotCatalog() {
       }
 
       for (const group of groups) {
-        group.metrics = sumUniqueRecordMetrics(group.records);
+        const detailMetrics = sumUniqueRecordMetrics(group.records);
+        const actionMetrics = ga4Status.state === 'ok'
+          ? ga4Status.actionMetrics?.[ga4ActionMetricKey(group.action)] || emptyMetrics()
+          : null;
+        group.metrics = {
+          eventCount: detailMetrics.eventCount,
+          sessions: actionMetrics ? actionMetrics.sessions : detailMetrics.sessions,
+          activeUsers: actionMetrics ? actionMetrics.activeUsers : detailMetrics.activeUsers,
+        };
         group.defaultOrder = Math.min(...group.records.map((record) => record.defaultOrder || 0));
         group.firstSeen = group.records.map((record) => record.firstSeen).filter(Boolean).sort()[0] || '';
         group.lastSeen = group.records.map((record) => record.lastSeen).filter(Boolean).sort().at(-1) || '';
@@ -5947,6 +6014,7 @@ function renderSnapshotCatalog() {
         group.records.sort(comparePeriodRecords);
       }
       groups.sort(comparePeriodGroups);
+      currentRenderedGroups = groups;
 
       periodRows.innerHTML = groups
         .map((group) => {
@@ -6012,6 +6080,7 @@ function renderSnapshotCatalog() {
       }
 
       updateSortHeaders();
+      updateExcelDownloadButton();
       scheduleLayoutSync();
     }
 
@@ -6073,7 +6142,9 @@ function renderSnapshotCatalog() {
     }
 
     function renderStatusRow(message) {
+      currentRenderedGroups = [];
       periodRows.innerHTML = '<tr class="status-row"><td colspan="' + tableColumnCount() + '">' + escapeHtml(message) + '</td></tr>';
+      updateExcelDownloadButton();
     }
 
     function renderTotalRow() {
@@ -6085,6 +6156,138 @@ function renderSnapshotCatalog() {
         '<td class="metric">' + formatMetric(ga4Status.totals.sessions, 'sessions') + '</td>' +
         '<td class="metric">' + formatMetric(ga4Status.totals.activeUsers, 'activeUsers') + '</td>' +
       '</tr>';
+    }
+
+    function updateExcelDownloadButton() {
+      excelDownloadButton.disabled =
+        excelExporting ||
+        ga4Status.state !== 'ok' ||
+        currentRenderedGroups.length === 0;
+      if (excelExporting) {
+        excelDownloadButton.textContent = 'Excel 생성 중';
+      } else if (excelDownloadButton.textContent !== '다운로드 실패') {
+        excelDownloadButton.textContent = 'Excel 다운로드';
+      }
+    }
+
+    async function downloadExcel() {
+      if (excelExporting || ga4Status.state !== 'ok' || !currentRenderedGroups.length) return;
+      excelExporting = true;
+      excelDownloadButton.title = '';
+      updateExcelDownloadButton();
+      let failed = false;
+
+      try {
+        const response = await fetch('../api/export-excel', {
+          method: 'POST',
+          cache: 'no-store',
+          headers: {
+            Accept: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(buildExcelExportPayload()),
+        });
+        if (!response.ok) {
+          const payload = await response.json().catch(() => ({}));
+          throw new Error(payload.error || 'Excel 파일을 생성하지 못했습니다.');
+        }
+
+        const blob = await response.blob();
+        const disposition = response.headers.get('content-disposition') || '';
+        const filenameMatch = /filename="([^"]+)"/i.exec(disposition);
+        const filename = filenameMatch?.[1] || excelDownloadFilename();
+        const downloadUrl = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = downloadUrl;
+        anchor.download = filename;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
+      } catch (error) {
+        failed = true;
+        excelDownloadButton.textContent = '다운로드 실패';
+        excelDownloadButton.title = error instanceof Error ? error.message : String(error);
+        window.setTimeout(() => {
+          if (!excelExporting) {
+            excelDownloadButton.textContent = 'Excel 다운로드';
+            updateExcelDownloadButton();
+          }
+        }, 2200);
+      } finally {
+        excelExporting = false;
+        if (!failed) updateExcelDownloadButton();
+        else excelDownloadButton.disabled = ga4Status.state !== 'ok' || !currentRenderedGroups.length;
+      }
+    }
+
+    function buildExcelExportPayload() {
+      const pageConfig = PAGE_CONFIGS[targetSelect.value] || {};
+      const selectedOption = targetSelect.options[targetSelect.selectedIndex];
+      const category = ga4Status.eventCategory || pageConfig.eventCategory ||
+        (targetSelect.value.includes('mobile') ? 'MTWD_main' : 'TWD_main');
+      const rows = [
+        {
+          rowType: 'total',
+          action: (ga4Status.eventName || 'click') + ' · ' + category,
+          area: '',
+          label: '',
+          periods: '',
+          eventCount: ga4Status.totals.eventCount,
+          sessions: ga4Status.totals.sessions,
+          activeUsers: ga4Status.totals.activeUsers,
+        },
+      ];
+
+      for (const group of currentRenderedGroups) {
+        rows.push({
+          rowType: 'group',
+          action: group.action,
+          area: '',
+          label: '',
+          periods: '',
+          eventCount: group.metrics.eventCount,
+          sessions: group.metrics.sessions,
+          activeUsers: group.metrics.activeUsers,
+        });
+
+        for (const record of group.records) {
+          rows.push({
+            rowType: 'item',
+            action: record.ga_action || '(missing)',
+            area: record.ga_area || '',
+            label: record.ga_label || '',
+            periods: formatPeriods(record.periods),
+            eventCount: record.ga4.eventCount,
+            sessions: record.ga4.sessions,
+            activeUsers: record.ga4.activeUsers,
+          });
+        }
+      }
+
+      return {
+        targetId: targetSelect.value,
+        pageLabel: selectedOption?.textContent || targetSelect.value,
+        startDate: startDateInput.value,
+        endDate: endDateInput.value,
+        eventName: ga4Status.eventName || 'click',
+        eventCategory: category,
+        hostname: ga4Status.hostname || '',
+        queryMode: ga4Status.queryMode || '',
+        samplingLevel: ga4Status.samplingLevel || '',
+        sortLabel: sortSelect.options[sortSelect.selectedIndex]?.textContent || '',
+        showGaArea,
+        totals: ga4Status.totals,
+        rows,
+      };
+    }
+
+    function excelDownloadFilename() {
+      const target = String(targetSelect.value || 'page')
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]+/g, '-')
+        .replace(/^-+|-+$/g, '') || 'page';
+      return 'skt-ga-attributes_' + target + '_' + startDateInput.value + '_' + endDateInput.value + '.xlsx';
     }
 
     function setSortState(nextState) {
@@ -6439,10 +6642,23 @@ function renderSnapshotCatalog() {
         applyDefaultWorkspaceColumns(isMobilePreview);
         lastPreviewMode = nextPreviewMode;
       }
+      const bridgeRequestId = ++contentBridgeRequestId;
       contentFrame.removeAttribute('srcdoc');
       contentFrame.src = target.contentPath;
+      scheduleContentBridgeInstall(bridgeRequestId);
       panelMeta.textContent = run.date + ' · ' + target.label;
       scheduleLayoutSync();
+    }
+
+    function scheduleContentBridgeInstall(requestId, attempt = 0) {
+      const delays = [0, 100, 300, 700, 1500, 3000, 5000];
+      if (requestId !== contentBridgeRequestId || attempt >= delays.length) return;
+
+      window.setTimeout(() => {
+        if (requestId !== contentBridgeRequestId) return;
+        installContentClickBridge();
+        scheduleContentBridgeInstall(requestId, attempt + 1);
+      }, delays[attempt]);
     }
 
     function fitContentFrame() {
@@ -6465,7 +6681,9 @@ function renderSnapshotCatalog() {
 
     function installContentClickBridge() {
       const doc = getContentDocument();
-      if (!doc || doc.__gaPeriodBridgeInstalled) return;
+      if (!doc) return;
+      restoreExhibitionScrolling(doc);
+      if (doc.__gaPeriodBridgeInstalled) return;
       doc.__gaPeriodBridgeInstalled = true;
 
       doc.addEventListener(
@@ -6488,6 +6706,36 @@ function renderSnapshotCatalog() {
       style.textContent = 'a, button, [role="button"], [ga_label] { cursor: pointer !important; }';
       doc.head?.append(style);
       doc.querySelectorAll('[data-ga-snapshot-toggle][aria-controls]').forEach(ensureToggleStacking);
+    }
+
+    function restoreExhibitionScrolling(doc) {
+      if (currentTarget?.pageType !== 'exhibition') return;
+      if (!doc.querySelector('style[data-ga-snapshot-scroll-restore]')) {
+        const style = doc.createElement('style');
+        style.setAttribute('data-ga-snapshot-scroll-restore', 'true');
+        style.textContent = [
+          'html {',
+          '  overflow-y: auto !important;',
+          '  height: auto !important;',
+          '  min-height: 100% !important;',
+          '}',
+          'body {',
+          '  overflow-y: visible !important;',
+          '  height: auto !important;',
+          '  min-height: 100% !important;',
+          '}',
+        ].join('\\n');
+        doc.head?.append(style);
+      }
+
+      for (const [element, overflowY] of [
+        [doc.documentElement, 'auto'],
+        [doc.body, 'visible'],
+      ]) {
+        element?.style.setProperty('overflow-y', overflowY, 'important');
+        element?.style.setProperty('height', 'auto', 'important');
+        element?.style.setProperty('min-height', '100%', 'important');
+      }
     }
 
     function toggleStaticControl(doc, control) {
@@ -7066,6 +7314,10 @@ function renderSnapshotCatalog() {
       const encodedLabel = encodeURIComponent(label || '');
       if (!area) return encodedAction + '::' + encodedLabel;
       return encodedAction + '::' + encodeURIComponent(area) + '::' + encodedLabel;
+    }
+
+    function ga4ActionMetricKey(action) {
+      return encodeURIComponent(action || '(missing)');
     }
 
     function isExcludedTrackingAction(targetId, action) {

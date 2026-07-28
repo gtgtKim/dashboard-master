@@ -8,6 +8,7 @@ import {
   queryAiFollowUp,
   queryAiInsights,
 } from './ai-insights-api.mjs';
+import { buildGaAttributesWorkbook } from './excel-export.mjs';
 import { queryGa4Metrics } from './ga4-data-api.mjs';
 
 const SNAPSHOTS_ROOT = path.resolve('snapshots');
@@ -59,6 +60,11 @@ const server = http.createServer(async (request, response) => {
 
     if (request.method === 'GET' && appPath === '/api/ga4-metrics') {
       await handleGa4Metrics(url, response);
+      return;
+    }
+
+    if (request.method === 'POST' && appPath === '/api/export-excel') {
+      await handleExcelExport(request, response);
       return;
     }
 
@@ -148,6 +154,26 @@ async function handleGa4Metrics(url, response) {
     sendJson(response, clientError ? 400 : 500, {
       status: 'error',
       error: message,
+    });
+  }
+}
+
+async function handleExcelExport(request, response) {
+  try {
+    const payload = JSON.parse(await readRequestBody(request, 6_000_000));
+    const { buffer, filename } = await buildGaAttributesWorkbook(payload);
+    response.writeHead(200, {
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': buffer.length,
+      'Cache-Control': 'no-store',
+      'X-Content-Type-Options': 'nosniff',
+    });
+    response.end(buffer);
+  } catch (error) {
+    sendJson(response, 400, {
+      status: 'error',
+      error: error instanceof Error ? error.message : String(error),
     });
   }
 }

@@ -2,7 +2,11 @@ import { GoogleGenAI } from '@google/genai';
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { makeGa4MetricKey, queryGa4Metrics } from './ga4-data-api.mjs';
+import {
+  makeGa4ActionMetricKey,
+  makeGa4MetricKey,
+  queryGa4Metrics,
+} from './ga4-data-api.mjs';
 import {
   assertSktDataStartDate,
   getSktPageConfig,
@@ -488,7 +492,7 @@ function metricsForRecord(record, ga4) {
   };
 }
 
-function buildGroups(records, ga4) {
+function buildGroups(records, ga4 = {}) {
   const groupsByKey = new Map();
 
   for (const record of records) {
@@ -517,6 +521,11 @@ function buildGroups(records, ga4) {
   return Array.from(groupsByKey.values())
     .map((group) => {
       const { metricKeys, ...rest } = group;
+      const actionMetrics = ga4.actionMetrics?.[makeGa4ActionMetricKey(group.action)];
+      if (actionMetrics) {
+        rest.metrics.sessions = Number(actionMetrics.sessions || 0);
+        rest.metrics.activeUsers = Number(actionMetrics.activeUsers || 0);
+      }
       return rest;
     })
     .sort((left, right) => right.metrics.eventCount - left.metrics.eventCount);

@@ -1,6 +1,6 @@
 # SKT Mainpage Dashboard
 
-GA attributes snapshot dashboard for the T world Shop main pages.
+GA attributes snapshot dashboard for the T world Shop main and exhibition pages.
 
 ## Local Docker
 
@@ -45,6 +45,9 @@ The GA4 service account JSON must exist on the host and is mounted into the cont
 Runtime GA4 metrics use Data API v1alpha Report Tasks with `samplingLevel: UNSAMPLED`.
 This mode requires a Google Analytics 360 property. Each date-range change creates a fresh report
 task; concurrent requests for the same page and range share only the in-progress request.
+Top-level totals come from the report's direct `TOTAL` aggregation. Group sessions and active users
+come from a separate report whose only grouping dimension is `event_action`; they are not sums of
+the element rows. The dashboard can export the selected, filtered, and sorted table as `.xlsx`.
 
 Gemini insights default to the lower-cost `gemini-3-flash-preview`. Users can select
 `gemini-3.1-pro-preview` with high thinking when they need a more precise analysis.
@@ -76,4 +79,8 @@ For production without a domain, keep the app bound to localhost and put Nginx H
 APP_BIND=127.0.0.1 APP_PORT=4173 DASHBOARD_REQUIRE_HTTPS=true docker compose up -d app scheduler
 ```
 
-The scheduler runs capture every day at `10:00 Asia/Seoul` and retries failures.
+The scheduler runs capture every day at `10:00 Asia/Seoul` and retries failures. It currently
+captures five targets: mobile/PC main, mobile/PC P00000494 exhibition, and mobile P00000495
+exhibition. Exhibition reporting starts on `2026-07-28`. P00000495 GA4 data uses
+`MTWD - P00000495` and
+`hostName = my-shop.tworld.co.kr`.

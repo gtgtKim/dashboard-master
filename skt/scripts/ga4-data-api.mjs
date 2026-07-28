@@ -13,8 +13,6 @@ import {
 
 const { AlphaAnalyticsDataClient } = analyticsData.v1alpha;
 
-export const PC_MAIN_BANNER_ACTION_ALIASES = Object.freeze(['메인 배너', '메인배너']);
-
 export const GA4_CONFIG = {
   propertyId: process.env.GA4_PROPERTY_ID || '307925613',
   accountId: process.env.GA4_ACCOUNT_ID || '44615111',
@@ -81,25 +79,20 @@ async function queryGa4MetricsUnsampled({ targetId, startDate, endDate }) {
     metrics: metricsSpec,
     dimensionFilter,
   });
-  const bannerReport = targetId === 'pc-main'
-    ? runUnsampledReportTask(client, {
-        startDate,
-        endDate,
-        dimensions: [{ name: GA4_CONFIG.dimensions.eventLabel }],
-        metrics: metricsSpec,
-        dimensionFilter: buildGa4DimensionFilter({
-          eventCategory,
-          hostname,
-          actionAliases: PC_MAIN_BANNER_ACTION_ALIASES,
-        }),
-      })
-    : Promise.resolve(null);
-  const [detailResult, bannerResult] = await Promise.all([detailReport, bannerReport]);
+  const actionReport = runUnsampledReportTask(client, {
+    startDate,
+    endDate,
+    dimensions: [{ name: GA4_CONFIG.dimensions.eventAction }],
+    metrics: metricsSpec,
+    dimensionFilter,
+  });
+  const [detailResult, actionResult] = await Promise.all([detailReport, actionReport]);
   const response = detailResult.response;
   const metrics = {};
-  const canonicalBannerKeys = new Set();
+  const metricKeysByAction = new Map();
 
   assertUnsampledResponse(response, 'detail');
+  assertUnsampledResponse(actionResult.response, 'action');
 
   for (const row of response.rows || []) {
     const dimensionValues = (row.dimensionValues || []).map((value, index) =>
@@ -126,31 +119,90 @@ async function queryGa4MetricsUnsampled({ targetId, startDate, endDate }) {
     const rowMetrics = metricsFromGa4Row(row);
 
     metrics[key] = sumGa4Metrics(metrics[key], rowMetrics);
-    if (targetId === 'pc-main' && canonicalAction === '메인 배너') {
-      canonicalBannerKeys.add(key);
-    }
+    addToSetMap(metricKeysByAction, canonicalAction, key);
   }
 
-  if (bannerResult) {
-    assertUnsampledResponse(bannerResult.response, 'PC main banner');
-    for (const key of canonicalBannerKeys) delete metrics[key];
+  const actionGroups = groupGa4ActionRows({
+    rows: actionResult.response.rows || [],
+    targetId,
+    startDate,
+    endDate,
+  });
+  const collisionGroups = Array.from(actionGroups.values()).filter(
+    (group) => group.rawActions.size > 1,
+  );
+  const collisionResults = await Promise.all(
+    collisionGroups.map(async (group) => {
+      const aliasFilter = buildGa4DimensionFilter({
+        eventCategory,
+        hostname,
+        actionAliases: Array.from(group.rawActions),
+      });
+      const [detailAliasResult, actionAliasResult] = await Promise.all([
+        runUnsampledReportTask(client, {
+          startDate,
+          endDate,
+          dimensions: [
+            ...(usesGaArea ? [{ name: GA4_CONFIG.dimensions.eventArea }] : []),
+            { name: GA4_CONFIG.dimensions.eventLabel },
+          ],
+          metrics: metricsSpec,
+          dimensionFilter: aliasFilter,
+        }),
+        runUnsampledReportTask(client, {
+          startDate,
+          endDate,
+          dimensions: [],
+          metrics: metricsSpec,
+          dimensionFilter: aliasFilter,
+        }),
+      ]);
 
-    for (const row of bannerResult.response.rows || []) {
-      const rawLabel = normalizeGa4Dimension(row.dimensionValues?.[0]?.value, { trim: false });
+      return {
+        group,
+        detailAliasResult,
+        actionAliasResult,
+      };
+    }),
+  );
+
+  for (const { group, detailAliasResult, actionAliasResult } of collisionResults) {
+    assertUnsampledResponse(detailAliasResult.response, `${group.canonicalAction} detail alias`);
+    assertUnsampledResponse(actionAliasResult.response, `${group.canonicalAction} action alias`);
+    for (const key of metricKeysByAction.get(group.canonicalAction) || []) delete metrics[key];
+
+    for (const row of detailAliasResult.response.rows || []) {
+      const area = usesGaArea
+        ? normalizeGa4Dimension(row.dimensionValues?.[0]?.value)
+        : '';
+      const rawLabel = normalizeGa4Dimension(
+        row.dimensionValues?.[usesGaArea ? 1 : 0]?.value,
+        { trim: false },
+      );
       const label = normalizeSktGaLabelForRange({
         targetId,
         startDate,
         endDate,
         label: rawLabel,
       });
-      const key = makeGa4MetricKey('메인 배너', '', label);
+      const key = makeGa4MetricKey(group.canonicalAction, area, label);
       metrics[key] = sumGa4Metrics(metrics[key], metricsFromGa4Row(row));
     }
+
+    group.metrics = metricsFromGa4Row(
+      actionAliasResult.response.totals?.[0] || actionAliasResult.response.rows?.[0],
+    );
   }
 
+  const actionMetrics = Object.fromEntries(
+    Array.from(actionGroups.values()).map((group) => [
+      makeGa4ActionMetricKey(group.canonicalAction),
+      group.metrics,
+    ]),
+  );
   const totalRow = response.totals?.[0];
   const totals = metricsFromGa4Row(totalRow);
-  const reportTaskCount = bannerResult ? 2 : 1;
+  const reportTaskCount = 2 + collisionResults.length * 2;
 
   return {
     propertyId: GA4_CONFIG.propertyId,
@@ -163,8 +215,10 @@ async function queryGa4MetricsUnsampled({ targetId, startDate, endDate }) {
     targetId,
     usesGaArea,
     metrics,
+    actionMetrics,
     totals,
     rowCount: Number(response.rowCount || response.rows?.length || 0),
+    actionRowCount: Number(actionResult.response.rowCount || actionResult.response.rows?.length || 0),
     queryMode: 'reportTasks',
     samplingLevel: GA4_CONFIG.samplingLevel,
     sampled: false,
@@ -239,9 +293,14 @@ export async function findGa4CredentialFile() {
     return path.resolve(process.env.GOOGLE_APPLICATION_CREDENTIALS);
   }
 
-  const entries = await fs.readdir(process.cwd()).catch(() => []);
-  const keyFile = entries.find((entry) => /^skt-otw-ua-.*\.json$/i.test(entry));
-  return keyFile ? path.resolve(keyFile) : null;
+  const searchDirectories = [process.cwd(), path.dirname(process.cwd())];
+  for (const directory of new Set(searchDirectories)) {
+    const entries = await fs.readdir(directory).catch(() => []);
+    const keyFile = entries.find((entry) => /^skt-otw-ua-.*\.json$/i.test(entry));
+    if (keyFile) return path.join(directory, keyFile);
+  }
+
+  return null;
 }
 
 export function ga4CategoryForTargetId(targetId) {
@@ -249,7 +308,9 @@ export function ga4CategoryForTargetId(targetId) {
 }
 
 export function ga4HostnameForTargetId(targetId) {
-  return getSktPageConfig(targetId).requireMobileHostname ? GA4_CONFIG.mobileHostname : null;
+  const config = getSktPageConfig(targetId);
+  if (config.ga4Hostname) return config.ga4Hostname;
+  return config.requireMobileHostname ? GA4_CONFIG.mobileHostname : null;
 }
 
 export function makeGa4MetricKey(action, area, label) {
@@ -262,6 +323,10 @@ export function makeGa4MetricKey(action, area, label) {
   const encodedLabel = encodeURIComponent(label || '');
   if (!area) return `${encodedAction}::${encodedLabel}`;
   return `${encodedAction}::${encodeURIComponent(area)}::${encodedLabel}`;
+}
+
+export function makeGa4ActionMetricKey(action) {
+  return encodeURIComponent(action || '(missing)');
 }
 
 export function emptyGa4Metrics() {
@@ -326,6 +391,45 @@ function metricsFromGa4Row(row) {
     sessions: numberFromMetric(row?.metricValues?.[1]?.value),
     activeUsers: numberFromMetric(row?.metricValues?.[2]?.value),
   };
+}
+
+function groupGa4ActionRows({ rows, targetId, startDate, endDate }) {
+  const groups = new Map();
+
+  for (const row of rows) {
+    const rawAction =
+      normalizeGa4Dimension(row.dimensionValues?.[0]?.value, { trim: false }) ||
+      '(missing)';
+    const canonicalAction = normalizeSktGaActionForRange({
+      targetId,
+      startDate,
+      endDate,
+      action: rawAction,
+    });
+    let group = groups.get(canonicalAction);
+    if (!group) {
+      group = {
+        canonicalAction,
+        rawActions: new Set(),
+        metrics: emptyGa4Metrics(),
+      };
+      groups.set(canonicalAction, group);
+    }
+
+    group.rawActions.add(rawAction);
+    group.metrics = sumGa4Metrics(group.metrics, metricsFromGa4Row(row));
+  }
+
+  return groups;
+}
+
+function addToSetMap(map, key, value) {
+  let values = map.get(key);
+  if (!values) {
+    values = new Set();
+    map.set(key, values);
+  }
+  values.add(value);
 }
 
 function sumGa4Metrics(left = emptyGa4Metrics(), right = emptyGa4Metrics()) {

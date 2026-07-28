@@ -15,6 +15,10 @@
     "@google-analytics/data": "^6.1.0",
     "@google/genai": "^2.10.0",
     "playwright": "^1.55.0",
-    "sharp": "^0.34.3"
+    "sharp": "^0.34.3",
+    "write-excel-file": "^4.1.1"
+  },
+  "devDependencies": {
+    "read-excel-file": "^9.3.4"
   }
 }

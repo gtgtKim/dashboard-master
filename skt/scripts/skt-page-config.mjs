@@ -10,7 +10,7 @@ export const SKT_EXHIBITION_FIXED_ACTIONS = Object.freeze([
   '고정 퀵 메뉴',
 ]);
 
-export const SKT_EXHIBITION_DATA_AVAILABLE_FROM = '2026-07-27';
+export const SKT_EXHIBITION_DATA_AVAILABLE_FROM = '2026-07-28';
 
 export const SKT_PAGE_CONFIGS = Object.freeze([
   Object.freeze({
@@ -64,6 +64,21 @@ export const SKT_PAGE_CONFIGS = Object.freeze([
     dataAvailableFrom: SKT_EXHIBITION_DATA_AVAILABLE_FROM,
     usesGaArea: true,
     requireMobileHostname: false,
+    excludedActions: SKT_EXHIBITION_LEGACY_ACTIONS,
+    includedFixedActions: SKT_EXHIBITION_FIXED_ACTIONS,
+  }),
+  Object.freeze({
+    id: 'mobile-exhibition-p00000495',
+    label: 'T world My Shop Mobile Exhibition P00000495',
+    url: 'https://my-shop.tworld.co.kr/main/exhibition?linkChnlSvcId=TWD-MOB&exhibitionId=P00000495',
+    device: 'mobile',
+    pageType: 'exhibition',
+    exhibitionId: 'P00000495',
+    eventCategory: 'MTWD - P00000495',
+    dataAvailableFrom: SKT_EXHIBITION_DATA_AVAILABLE_FROM,
+    usesGaArea: true,
+    requireMobileHostname: false,
+    ga4Hostname: 'my-shop.tworld.co.kr',
     excludedActions: SKT_EXHIBITION_LEGACY_ACTIONS,
     includedFixedActions: SKT_EXHIBITION_FIXED_ACTIONS,
   }),

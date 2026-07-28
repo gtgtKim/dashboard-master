@@ -6,8 +6,8 @@ import {
   GA4_CONFIG,
   ga4CategoryForTargetId,
   ga4HostnameForTargetId,
+  makeGa4ActionMetricKey,
   makeGa4MetricKey,
-  PC_MAIN_BANNER_ACTION_ALIASES,
 } from '../scripts/ga4-data-api.mjs';
 import {
   assertSktDataStartDate,
@@ -21,18 +21,28 @@ import { canonicalTrackingBase } from '../scripts/skt-tracking-normalization.mjs
 test('uses the exhibition GA4 categories and mobile hostname filter', () => {
   assert.equal(ga4CategoryForTargetId('pc-exhibition-p00000494'), 'TWD_exhibition - P00000494');
   assert.equal(ga4CategoryForTargetId('mobile-exhibition-p00000494'), 'MTWD_exhibition - P00000494');
+  assert.equal(ga4CategoryForTargetId('mobile-exhibition-p00000495'), 'MTWD - P00000495');
   assert.equal(ga4HostnameForTargetId('pc-exhibition-p00000494'), null);
   assert.equal(ga4HostnameForTargetId('mobile-exhibition-p00000494'), 'm.shop.tworld.co.kr');
+  assert.equal(ga4HostnameForTargetId('mobile-exhibition-p00000495'), 'my-shop.tworld.co.kr');
 });
 
-test('limits exhibition data queries to 2026-07-27 and later', () => {
-  assert.equal(dataAvailableFromForTargetId('pc-exhibition-p00000494'), '2026-07-27');
-  assert.equal(dataAvailableFromForTargetId('mobile-exhibition-p00000494'), '2026-07-27');
+test('limits exhibition data queries to 2026-07-28 and later', () => {
+  assert.equal(dataAvailableFromForTargetId('pc-exhibition-p00000494'), '2026-07-28');
+  assert.equal(dataAvailableFromForTargetId('mobile-exhibition-p00000494'), '2026-07-28');
+  assert.equal(dataAvailableFromForTargetId('mobile-exhibition-p00000495'), '2026-07-28');
   assert.equal(dataAvailableFromForTargetId('pc-main'), '');
-  assert.doesNotThrow(() => assertSktDataStartDate('pc-exhibition-p00000494', '2026-07-27'));
+  assert.doesNotThrow(() => assertSktDataStartDate('pc-exhibition-p00000494', '2026-07-28'));
   assert.throws(
-    () => assertSktDataStartDate('mobile-exhibition-p00000494', '2026-07-26'),
-    /must be on or after 2026-07-27/,
+    () => assertSktDataStartDate('mobile-exhibition-p00000494', '2026-07-27'),
+    /must be on or after 2026-07-28/,
+  );
+  assert.throws(
+    () => assertSktDataStartDate('mobile-exhibition-p00000495', '2026-07-27'),
+    /must be on or after 2026-07-28/,
+  );
+  assert.doesNotThrow(() =>
+    assertSktDataStartDate('mobile-exhibition-p00000495', '2026-07-28'),
   );
   assert.doesNotThrow(() => assertSktDataStartDate('mobile-main', '2026-06-25'));
 });
@@ -40,14 +50,17 @@ test('limits exhibition data queries to 2026-07-27 and later', () => {
 test('enables ga_area and legacy action exclusions only for exhibition pages', () => {
   assert.equal(usesGaAreaForTargetId('pc-exhibition-p00000494'), true);
   assert.equal(usesGaAreaForTargetId('mobile-exhibition-p00000494'), true);
+  assert.equal(usesGaAreaForTargetId('mobile-exhibition-p00000495'), true);
   assert.equal(usesGaAreaForTargetId('pc-main'), false);
   assert.equal(isExcludedSktGaAction('pc-exhibition-p00000494', 'SNS 공유하기'), true);
   assert.equal(isExcludedSktGaAction('mobile-exhibition-p00000494', '기획전 하단'), true);
+  assert.equal(isExcludedSktGaAction('mobile-exhibition-p00000495', '기획전 하단'), true);
   assert.equal(isExcludedSktGaAction('pc-main', '기획전 하단'), false);
   assert.equal(isIncludedSktFixedAction('pc-exhibition-p00000494', '고정 하단 배너'), true);
   assert.equal(isIncludedSktFixedAction('mobile-exhibition-p00000494', '고정 하단 배너'), true);
   assert.equal(isIncludedSktFixedAction('pc-exhibition-p00000494', '고정 퀵 메뉴'), true);
   assert.equal(isIncludedSktFixedAction('mobile-exhibition-p00000494', '고정 퀵 메뉴'), true);
+  assert.equal(isIncludedSktFixedAction('mobile-exhibition-p00000495', '고정 퀵 메뉴'), true);
   assert.equal(isIncludedSktFixedAction('pc-main', '고정 하단 배너'), false);
   assert.equal(isIncludedSktFixedAction('pc-main', '고정 퀵 메뉴'), false);
 });
@@ -93,14 +106,19 @@ test('builds UNSAMPLED report tasks with totals', () => {
   assert.equal(definition.limit, 250000);
 });
 
-test('filters the PC main banner alias report by both action spellings', () => {
+test('builds exact action filters for alias aggregation reports', () => {
   const filter = buildGa4DimensionFilter({
     eventCategory: 'TWD_main',
-    actionAliases: PC_MAIN_BANNER_ACTION_ALIASES,
+    actionAliases: ['메인 배너', '메인배너'],
   });
   const actionFilter = filter.andGroup.expressions.at(-1).filter;
 
   assert.equal(actionFilter.fieldName, GA4_CONFIG.dimensions.eventAction);
   assert.deepEqual(actionFilter.inListFilter.values, ['메인 배너', '메인배너']);
   assert.equal(actionFilter.inListFilter.caseSensitive, true);
+});
+
+test('uses stable encoded keys for action-level metrics', () => {
+  assert.equal(makeGa4ActionMetricKey('메인 배너'), '%EB%A9%94%EC%9D%B8%20%EB%B0%B0%EB%84%88');
+  assert.equal(makeGa4ActionMetricKey(''), '(missing)');
 });
