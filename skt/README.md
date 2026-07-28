@@ -53,6 +53,10 @@ filtered, and sorted table as `.xlsx`.
 
 Gemini insights default to the lower-cost `gemini-3-flash-preview`. Users can select
 `gemini-3.1-pro-preview` with high thinking when they need a more precise analysis.
+Generation uses temperature `0.4`. Insight input identifies each page as PC web, mobile web, or
+webview, marks exhibition pages as Samsung Galaxy promotions, and includes click/session/user
+metrics per observed snapshot day. These are observation-day reference values, not impressions or
+actual exposure-day performance.
 Repeated daily element observations are compacted before the request, and oversized periods
 are analyzed in chunks. Model IDs can be changed with `GEMINI_FLASH_MODEL` and
 `GEMINI_PRO_MODEL`; input limits can be changed with `GEMINI_INSIGHTS_MAX_INPUT_TOKENS`

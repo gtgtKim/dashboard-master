@@ -11,6 +11,8 @@ export const SKT_EXHIBITION_FIXED_ACTIONS = Object.freeze([
 ]);
 
 export const SKT_EXHIBITION_DATA_AVAILABLE_FROM = '2026-07-28';
+export const SKT_EXHIBITION_CAMPAIGN_CONTEXT =
+  'Samsung Galaxy products and related offers promotion';
 
 export const SKT_PAGE_CONFIGS = Object.freeze([
   Object.freeze({
@@ -18,7 +20,9 @@ export const SKT_PAGE_CONFIGS = Object.freeze([
     label: 'T world Shop Mobile Main',
     url: 'https://m.shop.tworld.co.kr/shop/main',
     device: 'mobile',
+    experienceType: 'mobile-web',
     pageType: 'main',
+    campaignContext: '',
     eventCategory: 'MTWD_main',
     dataAvailableFrom: '',
     usesGaArea: false,
@@ -31,7 +35,9 @@ export const SKT_PAGE_CONFIGS = Object.freeze([
     label: 'T world Shop PC Main',
     url: 'https://shop.tworld.co.kr/shop/main',
     device: 'pc',
+    experienceType: 'pc-web',
     pageType: 'main',
+    campaignContext: '',
     eventCategory: 'TWD_main',
     dataAvailableFrom: '',
     usesGaArea: false,
@@ -44,7 +50,9 @@ export const SKT_PAGE_CONFIGS = Object.freeze([
     label: 'T world Shop Mobile Exhibition P00000494',
     url: 'https://m.shop.tworld.co.kr/exhibition/view?exhibitionId=P00000494',
     device: 'mobile',
+    experienceType: 'mobile-web',
     pageType: 'exhibition',
+    campaignContext: SKT_EXHIBITION_CAMPAIGN_CONTEXT,
     exhibitionId: 'P00000494',
     eventCategory: 'MTWD_exhibition - P00000494',
     dataAvailableFrom: SKT_EXHIBITION_DATA_AVAILABLE_FROM,
@@ -58,7 +66,9 @@ export const SKT_PAGE_CONFIGS = Object.freeze([
     label: 'T world Shop PC Exhibition P00000494',
     url: 'https://shop.tworld.co.kr/exhibition/view?exhibitionId=P00000494',
     device: 'pc',
+    experienceType: 'pc-web',
     pageType: 'exhibition',
+    campaignContext: SKT_EXHIBITION_CAMPAIGN_CONTEXT,
     exhibitionId: 'P00000494',
     eventCategory: 'TWD_exhibition - P00000494',
     dataAvailableFrom: SKT_EXHIBITION_DATA_AVAILABLE_FROM,
@@ -72,7 +82,9 @@ export const SKT_PAGE_CONFIGS = Object.freeze([
     label: 'T world My Shop Mobile Exhibition P00000495',
     url: 'https://my-shop.tworld.co.kr/main/exhibition?linkChnlSvcId=TWD-MOB&exhibitionId=P00000495',
     device: 'mobile',
+    experienceType: 'webview',
     pageType: 'exhibition',
+    campaignContext: SKT_EXHIBITION_CAMPAIGN_CONTEXT,
     exhibitionId: 'P00000495',
     eventCategory: 'MTWD - P00000495',
     dataAvailableFrom: SKT_EXHIBITION_DATA_AVAILABLE_FROM,
@@ -97,7 +109,9 @@ export function getSktPageConfig(targetId) {
     label: id,
     url: '',
     device: mobile ? 'mobile' : 'pc',
+    experienceType: mobile ? 'mobile-web' : 'pc-web',
     pageType: 'main',
+    campaignContext: '',
     eventCategory: mobile ? 'MTWD_main' : 'TWD_main',
     dataAvailableFrom: '',
     usesGaArea: false,

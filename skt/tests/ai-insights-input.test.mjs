@@ -1,8 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  analysisForElements,
   buildGroups,
   estimatePromptTokens,
+  GEMINI_GENERATION_TEMPERATURE,
+  metricsPerObservedDay,
   normalizeGeminiModelProfile,
   normalizeFollowUpHistory,
   normalizeFollowUpQuestion,
@@ -16,11 +19,13 @@ test('uses action-report metrics for every GA action group metric', () => {
       metricKey: 'banner::one',
       tracking: { action: '메인 배너' },
       metrics: { eventCount: 10, sessions: 9, activeUsers: 8 },
+      periods: [{ start: '2026-07-28', end: '2026-07-29' }],
     },
     {
       metricKey: 'banner::two',
       tracking: { action: '메인 배너' },
       metrics: { eventCount: 20, sessions: 18, activeUsers: 16 },
+      periods: [{ start: '2026-07-29', end: '2026-07-30' }],
     },
   ];
   const actionMetrics = {
@@ -31,7 +36,11 @@ test('uses action-report metrics for every GA action group metric', () => {
     },
   };
 
-  const groups = buildGroups(records, { actionMetrics });
+  const groups = buildGroups(records, { actionMetrics }, [
+    '2026-07-28',
+    '2026-07-29',
+    '2026-07-30',
+  ]);
 
   assert.equal(groups.length, 1);
   assert.deepEqual(groups[0].metrics, {
@@ -39,6 +48,55 @@ test('uses action-report metrics for every GA action group metric', () => {
     sessions: 21,
     activeUsers: 19,
   });
+  assert.deepEqual(groups[0].observation, {
+    firstSeen: '2026-07-28',
+    lastSeen: '2026-07-30',
+    observedDays: 3,
+    metricsPerObservedDay: {
+      eventCount: 8.33,
+      sessions: 7,
+      activeUsers: 6.33,
+    },
+  });
+});
+
+test('uses a 0.4 Gemini temperature and calculates observed-day metrics', () => {
+  assert.equal(GEMINI_GENERATION_TEMPERATURE, 0.4);
+  assert.deepEqual(
+    metricsPerObservedDay({ eventCount: 21, sessions: 12, activeUsers: 9 }, 3),
+    { eventCount: 7, sessions: 4, activeUsers: 3 },
+  );
+  assert.deepEqual(metricsPerObservedDay({ eventCount: 21 }, 0), {
+    eventCount: null,
+    sessions: null,
+    activeUsers: null,
+  });
+});
+
+test('keeps direct action metrics when an oversized analysis is split', () => {
+  const elements = [
+    {
+      tracking: { action: 'Galaxy' },
+      metrics: { eventCount: 5, sessions: 4, activeUsers: 3 },
+    },
+  ];
+  const directGroup = {
+    action: 'Galaxy',
+    metrics: { eventCount: 50, sessions: 40, activeUsers: 30 },
+  };
+  const chunk = analysisForElements(
+    {
+      dashboardLogic: {},
+      page: {},
+      ga4: {},
+      groups: [directGroup, { action: 'Other', metrics: {} }],
+      elements,
+    },
+    elements,
+    { index: 1, count: 2 },
+  );
+
+  assert.deepEqual(chunk.groups, [directGroup]);
 });
 
 test('defaults Gemini insights to Flash and allows only configured model profiles', () => {
@@ -108,7 +166,7 @@ test('splits oversized insight input without dropping elements', async () => {
     },
   };
 
-  const chunks = await splitElementsToFit(ai, analysis, elements, 1_500);
+  const chunks = await splitElementsToFit(ai, analysis, elements, 1_800);
 
   assert.ok(chunks.length > 1);
   assert.deepEqual(chunks.flat(), elements);

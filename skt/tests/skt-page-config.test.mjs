@@ -12,6 +12,7 @@ import {
 import {
   assertSktDataStartDate,
   dataAvailableFromForTargetId,
+  getSktPageConfig,
   isExcludedSktGaAction,
   isIncludedSktFixedAction,
   usesGaAreaForTargetId,
@@ -25,6 +26,22 @@ test('uses the exhibition GA4 categories and mobile hostname filter', () => {
   assert.equal(ga4HostnameForTargetId('pc-exhibition-p00000494'), null);
   assert.equal(ga4HostnameForTargetId('mobile-exhibition-p00000494'), 'm.shop.tworld.co.kr');
   assert.equal(ga4HostnameForTargetId('mobile-exhibition-p00000495'), 'my-shop.tworld.co.kr');
+});
+
+test('identifies PC web, mobile web, and webview campaign contexts for insights', () => {
+  assert.equal(getSktPageConfig('pc-main').experienceType, 'pc-web');
+  assert.equal(getSktPageConfig('mobile-main').experienceType, 'mobile-web');
+  assert.equal(
+    getSktPageConfig('mobile-exhibition-p00000495').experienceType,
+    'webview',
+  );
+  for (const targetId of [
+    'pc-exhibition-p00000494',
+    'mobile-exhibition-p00000494',
+    'mobile-exhibition-p00000495',
+  ]) {
+    assert.match(getSktPageConfig(targetId).campaignContext, /Samsung Galaxy/);
+  }
 });
 
 test('limits exhibition data queries to 2026-07-28 and later', () => {

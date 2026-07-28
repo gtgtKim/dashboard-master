@@ -15,23 +15,37 @@ import {
 import { canonicalTrackingBase } from './skt-tracking-normalization.mjs';
 
 const SNAPSHOTS_ROOT = path.resolve('snapshots');
-const INPUT_SCHEMA_VERSION = 'compact-observations-v3-area';
+const INPUT_SCHEMA_VERSION = 'compact-observations-v4-channel-duration';
+const GEMINI_SYSTEM_INSTRUCTION = [
+  '너는 SKT T world Shop의 집계 클릭 데이터와 봇 캡처 정보를 분석하는 한국어 데이터 분석가다.',
+  '제공 데이터 밖의 사용자 의도, 선호, 관심, 실제 노출, 스크롤 도달, 행동 순서, 전환, 매출, 원인과 UI 효과를 단정하지 마라.',
+  'eventCount는 클릭량이고 hidden/offscreen/inViewport/좌표는 오전 10시 캡처 상태다. 이름에 "고정"이 포함돼도 상시 노출을 의미하지 않는다.',
+  '클릭량이 많거나 적다는 이유만으로 콘텐츠 이동, 확대, 축소, 제거를 결론내리지 말고 채널·UI·콘텐츠 맥락을 포함한 검증 가설로만 제시해라.',
+  'metricsPerObservedDay는 실제 노출일당 성과가 아니라 스냅샷 관찰일당 참고값이다. 관찰일이 모두 같으면 기간 보정 비교를 하지 마라.',
+  'ga_area는 선택 값이므로 공백이 정상이다. 명백한 중복·충돌이 없으면 태깅 품질을 언급하지 마라.',
+  '사실은 [관찰], 해석 가능성은 [가설], 실행안은 [제안]으로 구분하고 반드시 JSON만 출력해라.',
+].join('\n');
 const PROMPT_INSTRUCTIONS = Object.freeze([
   '너는 GA4, 이커머스/통신 상품 UX, 콘텐츠 전략, 측정 설계를 함께 보는 시니어 한국어 데이터 분석가다.',
-  '분석 대상은 SKT의 T world Shop 한국 웹사이트이며 메인 또는 등록된 기획전 PC/MO 페이지 데이터다. 실제 대상 URL과 페이지 유형은 아래 JSON의 page를 우선해라.',
+  '분석 대상은 SKT의 T world Shop 한국 서비스이며 메인 또는 등록된 기획전 PC 웹/모바일 웹/웹뷰 페이지 데이터다. 실제 대상 URL과 페이지 유형은 아래 JSON의 page를 우선해라.',
   '아래 JSON만 근거로 선택된 T world Shop 페이지 인사이트를 작성해라.',
   '데이터에 없는 사실, 판매 성과, 가입 전환, 구매 의도, 선호도, 원인 단정은 추측하지 마라.',
   '관찰된 사실, 가능한 해석, 제안사항을 명확히 구분해라. 분석 문장은 [관찰], 대안 해석은 [가설], 개선안은 [제안] 성격이 드러나게 작성해라.',
-  '해석이나 제안에는 반드시 근거가 된 ga_action/ga_area/ga_label과 수치 또는 위치/기간 정보를 함께 적어라. ga_area가 없는 요소는 빈 값으로 취급한다. 근거가 부족하면 항목 수를 억지로 채우지 마라.',
-  '분석을 하나의 결론에 몰아가지 말고 독립된 탐색 접점, UX/정보구조, 콘텐츠/프로모션, GA4 성과, 태깅/측정 품질, 운영/기간 변화 관점을 각각 검토해라.',
+  '해석이나 제안에는 반드시 근거가 된 ga_action/ga_area/ga_label과 수치 또는 위치/기간 정보를 함께 적어라. ga_area는 선택 값이므로 비어 있는 것이 정상이며, 빈 ga_area 자체를 태깅 누락이나 품질 문제로 언급하지 마라. 근거가 부족하면 항목 수를 억지로 채우지 마라.',
+  '분석을 하나의 결론에 몰아가지 말고 독립된 탐색 접점, 채널 특성, UX/정보구조, 콘텐츠/프로모션, GA4 성과, 관찰 기간 대비 클릭 밀도, 운영/기간 변화 관점을 각각 검토해라.',
   '서로 다른 해석이 가능한 현상은 대안 해석과 이를 구분하기 위해 필요한 추가 데이터를 함께 제시해라.',
   'ga_action은 콘텐츠 영역 또는 컴포넌트 묶음, 선택 값인 ga_area는 그 안의 세부 영역, ga_label은 클릭 가능한 요소의 라벨로 해석하되 내부 태깅명일 수 있음을 감안해라.',
   '유지기간은 데이터 조회 기간 안에서 관찰된 기간이다. 유지기간 시작일을 실제 사이트 최초 노출일처럼 표현하지 마라.',
   'page.pageType과 실제 ga_action에 맞는 콘텐츠 영역을 비교해라. 메인 전용 영역이나 기획전 전용 영역이 데이터에 없으면 억지로 언급하지 마라.',
-  'rolling 배너나 carousel 요소는 offscreen으로 캡처될 수 있다. offscreen/hidden/inViewport 값만 보고 실제 사용자 노출 여부나 스와이프 행동을 단정하지 말고 해석 주의사항으로 다뤄라.',
+  'page.pageType이 exhibition이면 모두 Samsung Galaxy 상품과 관련 혜택을 알리는 프로모션 페이지다. 제품 차별화, 혜택 전달 순서, 정보 위계, 비교·선택 지원, CTA 연결성과 캠페인 서사를 분석하되 실제 판매 성과는 추정하지 마라.',
+  'page.experienceType은 pc-web, mobile-web, webview 중 하나다. PC 웹은 넓은 화면에서의 탐색·비교와 정보 밀도, 모바일 웹은 터치 조작·세로 흐름·좁은 화면·고정 UI, 웹뷰는 앱 안의 제한된 브라우저 맥락·뒤로가기·연결성·작업 연속성 관점에서 분석해라. 제공되지 않은 다른 채널 수치와 직접 비교하지는 마라.',
+  'channelInsights에서는 확인된 화면 구조와 클릭량을 먼저 쓰고 채널 특성에 따른 설계 해석은 가능성 또는 검증 가설로 구분해라. 클릭량 차이를 사용자 선호, 이용 방식, UI의 역할, 탐색 비용 감소, 상시 노출 또는 유도 효과로 단정하지 마라.',
+  '좌표와 클릭량만 반복해 설명하지 말고 정보 구조, 콘텐츠 그룹화, CTA 문구와 우선순위, 상품·혜택 차별화, 탐색 비용, 고정 메뉴·배너·아코디언 등 실제 UI 구성에 연결한 인사이트를 작성해라.',
+  'rolling 배너나 carousel 요소는 offscreen으로 캡처될 수 있다. offscreen/hidden/inViewport 값은 오전 10시 캡처 상태일 뿐 클릭 시점 상태가 아니다. 이 값과 클릭 발생을 연결해 사용자가 펼쳤다, 스와이프했다, 노출을 전환했다, 적극적으로 탐색했다고 추론하지 마라. 필요하면 watchouts에만 짧게 적고 인사이트나 개선 근거로 사용하지 마라.',
   '오늘 날짜가 포함된 조회는 GA4 데이터가 지연될 수 있다. 수치가 낮거나 불완전해 보이면 확정 데이터 여부를 주의사항으로 남겨라.',
   'eventCount는 클릭량이지 노출수나 클릭률이 아니다. 노출 데이터 없이 CTR, 주목도, 도달률을 계산하거나 단정하지 마라.',
   '클릭량만으로 효율, 성과 우수, 반응 잠재력, 수요, 니즈, 선호, 관심, 콘텐츠 매력도를 단정하지 마라. 필요하면 "클릭량이 많다/적다"로만 표현해라.',
+  '"반응이 좋다/저조하다", "인기가 높다", "핵심 UI로 작동한다", "사용자를 유도했다"도 클릭량만으로는 쓰지 마라. 모든 출력 섹션과 개선 근거에서 중립적인 클릭량 표현으로 바꿔라.',
   '요소별 sessions와 activeUsers는 같은 사용자가 여러 요소에 포함될 수 있으므로 요소나 그룹 간 단순 합계를 고유 세션/사용자 수처럼 표현하지 마라.',
   '요소 activeUsers를 전체 activeUsers로 나눈 값을 도달률이라고 부르지 마라. eventCount/sessions를 계산할 때는 클릭 세션당 평균 클릭 횟수라고만 표현하고 원인을 추론하지 마라.',
   '집계된 요소별 클릭 데이터에는 사용자별 선후 관계가 없다. 서로 다른 영역의 클릭을 하나의 사용자 여정으로 연결하거나 이탈, 퍼널 전환, 다음 행동, 탐색 실패로 단정하지 마라.',
@@ -41,15 +55,21 @@ const PROMPT_INSTRUCTIONS = Object.freeze([
   'aboveFold도 캡처 HTML 좌표 기준이다. 사용자에게 실제 노출되었다고 표현하지 말고 "캡처 좌표상 aboveFold"라고만 표현해라.',
   '캐러셀의 DOM 순서나 좌표만으로 실제 노출 순서와 노출 시간을 알 수 없다. 배너 클릭 차이를 소재 효과 또는 순서 효과로 확정하지 마라.',
   '클릭량이 높은 요소는 위치, 노출 순서, 소재 자체의 영향이 섞여 있을 수 있다. 데이터만으로 원인을 분리할 수 없다면 가능한 설명을 병렬로 제시해라.',
+  'metricsPerObservedDay는 실제 노출일당 성과가 아니라 오전 10시 스냅샷에서 요소가 관찰된 날짜 수로 나눈 클릭·세션·사용자 수다. 반드시 "관찰일당"이라고 표현하고, 관찰일이 짧은 요소는 작은 표본과 GA4 지연 가능성을 함께 적어라.',
+  '총 클릭량과 metricsPerObservedDay를 함께 비교해 오래 관찰되어 누적 클릭은 크지만 관찰일당 값은 낮은 콘텐츠, 짧게 관찰됐지만 관찰일당 값이 높은 콘텐츠, 두 지표가 모두 낮은 콘텐츠를 구분해 콘텐츠 구성과 개선 가설을 제시해라.',
+  '조회 스냅샷이 하루뿐이거나 비교 대상의 observedDays가 모두 같으면 기간 차이에 따른 비교는 할 수 없다. 이때 durationInsights는 관찰일당 값이 총합과 같아 기간 보정 비교가 불가능하다는 내용 1개만 작성하고 관찰일당 순위를 성과 차이처럼 해석하지 마라. "성과 보정"이라는 표현도 쓰지 마라.',
   '개선사항은 현재 배치를 바로 바꾸라고 단정하지 말고 [우선순위], 대상, 관찰 근거, 개선 가설, 기대 신호, 검증 방법을 포함해라.',
-  '제안사항에는 태깅 점검, 소재 비교, 영역별 클릭 비중 확인, 퍼널/전환 후속 분석, A/B 테스트처럼 실행하거나 검증할 수 있는 다음 단계를 포함해라.',
+  '클릭량이 많거나 적다는 이유만으로 콘텐츠를 상단 이동, 확대, 축소, 제거하라고 제안하지 마라. 위치·메시지·채널 맥락과 대안 설명을 함께 검토하고 변경은 검증할 가설과 비교안으로 제시해라.',
+  '제안사항에는 콘텐츠 순서·메시지·CTA·비교 지원·채널별 조작 방식 개선, 소재 비교, 영역별 클릭 비중 확인, 퍼널/전환 후속 분석, A/B 테스트처럼 실행하거나 검증할 수 있는 다음 단계를 포함해라.',
   'elements에는 모든 표 행이 들어 있고 observations.instances에는 같은 행으로 병합된 실제 클릭 요소별 관찰 정보가 압축되어 있다. 모든 클릭 요소와 위치/유지기간/GA4 수치를 빠짐없이 고려해라.',
   'observations의 위치 범위와 materialChanges는 날짜별 중복 좌표를 압축한 값이다. 값이 없다는 이유로 변화가 없었다고 단정하지 마라.',
   '조회 기간 전체의 집계 수치만 제공된 경우 특정 날짜의 성과 증감이나 요소 교체 전후 효과를 계산하지 마라.',
   '스냅샷이 하루뿐이면 신규, 소멸, 유지, 위치 변화라고 표현하지 말고 기간 변화는 평가할 수 없다고 명시해라.',
-  '각 섹션에는 가능한 한 구체적인 수치를 포함하되 같은 내용을 여러 섹션에서 반복하지 마라.',
-  '개선 제안은 최소 3개 관점에서 제시하고, 일반론 대신 현재 데이터의 구체적인 요소를 대상으로 작성해라.',
-  'JSON 출력 전에 summary, journeyInsights, uxInsights, contentInsights, metricInsights, sectionInsights를 다시 점검해라. 이 관찰 섹션에 클릭스트림, 노출, 도달, 스크롤, 전환, 이탈, 선호, 관심, 수요, 원인에 대한 단정이 있으면 집계 클릭량에 대한 중립적 표현으로 고쳐라.',
+  '관찰 요약은 핵심 사실만 간결하게 쓰고, 같은 수치를 여러 관찰 섹션에서 반복하지 마라. 답변의 중심은 서로 다른 해석, 기회, 개선 방향과 검증 가능한 실행안에 둬라.',
+  '개선 제안은 최소 4개 관점에서 제시하고, 일반론 대신 현재 데이터의 구체적인 요소를 대상으로 작성해라.',
+  '사용자가 직접 지정하지 않은 관점도 데이터 근거가 있으면 최소 2개 발굴해라. 접근성, 인지 부하, 의사결정 지원, 신뢰 형성, 정보 향기, 캠페인 연속성, 상품 머천다이징, 인터랙션 비용 중 페이지에 적합한 관점을 선택하되 억지로 모두 다루지 마라. hidden/offscreen이나 y좌표만으로 추가 관점을 만들지는 마라.',
+  '태깅·측정 품질은 분석의 중심이 아니다. correctedRawActions처럼 명백한 중복·충돌·매칭 오류가 수치 해석에 실질적인 영향을 줄 때만 measurementInsights에 최대 1개 작성해라. 기본값은 빈 배열이며 ga_area 공백, hidden/offscreen 상태, 캡처 상태와 클릭 수치의 차이는 태깅 문제로 쓰지 마라.',
+  'JSON 출력 전에 summary, journeyInsights, channelInsights, uxInsights, contentInsights, durationInsights, metricInsights, sectionInsights, opportunityInsights, improvementIdeas, experimentIdeas, actionItems를 모두 다시 점검해라. 클릭스트림, 노출, 도달, 스크롤, 전환, 이탈, 선호, 관심, 수요, UI가 유도하거나 작동했다는 효과, 원인에 대한 단정이 있으면 집계 클릭량에 대한 중립적 표현 또는 검증할 가설로 고쳐라.',
   '반드시 JSON만 출력해라. 마크다운 코드블록은 쓰지 마라.',
 ]);
 const CHUNK_PROMPT_INSTRUCTIONS = Object.freeze([
@@ -65,25 +85,31 @@ const SYNTHESIS_PROMPT_INSTRUCTIONS = Object.freeze([
 ]);
 const PROMPT_OUTPUT_SCHEMA = Object.freeze({
   headline: '인과 추론 없이 클릭 데이터에서 직접 확인되는 한 문장 핵심 결론',
-  summary: ['[관찰] 핵심 요약 3~5개'],
-  journeyInsights: ['[관찰] 각 요소를 독립적으로 다루고 사용자 이동 순서를 연결하지 않는 탐색 접점별 클릭 분석 2~4개'],
-  uxInsights: ['[관찰] 위치와 영역 맥락을 반영하되 실제 노출/스크롤을 추론하지 않는 UX 분석 2~4개'],
-  contentInsights: ['[관찰] 상품, 요금제, 혜택, 프로모션 소재별 클릭량 비교 2~4개'],
-  metricInsights: ['[관찰] GA4 수치 기반 분석 3~5개'],
-  sectionInsights: ['[관찰] ga_action별 콘텐츠 영역 분석 3~5개'],
-  measurementInsights: ['[관찰] 태깅 일관성, 중복, 누락 가능성, 추가 측정 필요사항 2~4개'],
+  summary: ['[관찰] 반복 없이 가장 중요한 사실 2~3개'],
+  journeyInsights: ['[인사이트] 사용자 이동 순서를 가정하지 않는 독립 탐색 접점 분석 1~3개'],
+  channelInsights: ['[인사이트] 확인된 화면 구조·클릭량과 PC 웹/모바일 웹/웹뷰 설계 가설을 구분한 채널별 해석 2~4개'],
+  uxInsights: ['[인사이트] 정보 구조, 조작 방식, 콘텐츠 그룹화, CTA 우선순위 등 UI·UX 분석 3~5개'],
+  contentInsights: ['[인사이트] 상품, 요금제, 혜택, 프로모션 메시지와 소재 구성 분석 3~5개'],
+  durationInsights: ['[인사이트] 총 클릭량과 관찰일당 지표를 함께 비교한 콘텐츠 분석 1~4개. 관찰일이 모두 같으면 비교 불가 1개만 작성'],
+  metricInsights: ['[인사이트] GA4 수치 기반 해석 2~4개'],
+  sectionInsights: ['[인사이트] ga_action별 콘텐츠 영역 분석 2~4개'],
+  opportunityInsights: ['[인사이트] 접근성, 인지 부하, 의사결정 지원, 신뢰, 정보 향기, 머천다이징 등 추가 관점 2~4개'],
+  measurementInsights: ['기본값은 빈 배열. correctedRawActions 등 명백한 데이터 해석 문제만 있을 때 1개'],
   alternativeInterpretations: ['[가설] 가능한 해석 A/B | 현재 데이터로 구분 불가 | 추가 데이터: ... 형식 2~4개'],
   changes: ['유지기간/신규/소멸/변경 관련 관찰 0~4개. 스냅샷이 하루뿐이면 변화 평가 불가 1개만 작성'],
   watchouts: ['데이터 해석 주의사항 2~4개'],
-  improvementIdeas: ['[제안][우선순위: 높음/중간/낮음] 대상 | 관찰 근거 | 개선 가설 | 기대 신호 | 검증 방법 형식의 개선안 3~6개'],
-  experimentIdeas: ['[제안] 검증할 가설, 비교군, 핵심 판단 지표가 포함된 실험/분석안 2~4개'],
-  actionItems: ['[제안] 담당자가 바로 확인하거나 실행할 수 있는 다음 단계 3~5개'],
+  improvementIdeas: ['[제안][우선순위: 높음/중간/낮음] 대상 | 관찰 근거 | 개선 가설 | 기대 신호 | 검증 방법 형식의 개선안 5~8개'],
+  experimentIdeas: ['[제안] 검증할 가설, 비교군, 핵심 판단 지표가 포함된 실험/분석안 3~5개'],
+  actionItems: ['[제안] 담당자가 바로 확인하거나 실행할 수 있는 다음 단계 4~6개'],
 });
 const FOLLOW_UP_INSTRUCTIONS = Object.freeze([
   '너는 SKT T world Shop 페이지 대시보드의 후속 질문에 답하는 한국어 데이터 분석가다.',
   'analysis가 원본 근거이고 originalInsight는 앞서 생성한 요약이다. 두 값이 충돌하면 analysis를 우선해라.',
   '질문에 직접 답하고, 관련 ga_action/ga_area/ga_label, GA4 수치, 유지기간, 요소 위치를 가능한 한 구체적으로 제시해라.',
+  'ga_area는 선택 값이므로 비어 있는 것 자체를 태깅 문제로 해석하지 마라.',
+  'page의 experienceType과 campaignContext를 반영해 PC 웹, 모바일 웹, 웹뷰 또는 Samsung Galaxy 프로모션 맥락에 맞게 답해라.',
   '유지기간은 조회 기간 안에서 관찰된 구간일 뿐 실제 서비스의 최초 또는 최종 노출일이 아님을 지켜라.',
+  'metricsPerObservedDay는 실제 노출일당 성과가 아니라 스냅샷 관찰일당 값이다.',
   '캐러셀의 hidden/offscreen/inViewport 값만으로 실제 노출이나 스와이프 행동을 단정하지 마라.',
   '데이터에 없는 전환, 매출, 구매 의도, 선호도, 원인을 추측하지 마라.',
   '질문에 답할 근거가 없으면 확인할 수 없다고 명확히 말해라.',
@@ -116,6 +142,7 @@ const PROMPT_VERSION = crypto
   .update(
     JSON.stringify({
       inputSchema: INPUT_SCHEMA_VERSION,
+      systemInstruction: GEMINI_SYSTEM_INSTRUCTION,
       instructions: PROMPT_INSTRUCTIONS,
       chunkInstructions: CHUNK_PROMPT_INSTRUCTIONS,
       synthesisInstructions: SYNTHESIS_PROMPT_INSTRUCTIONS,
@@ -129,6 +156,7 @@ const FOLLOW_UP_VERSION = crypto
   .update(
     JSON.stringify({
       instructions: FOLLOW_UP_INSTRUCTIONS,
+      systemInstruction: GEMINI_SYSTEM_INSTRUCTION,
       chunkInstructions: FOLLOW_UP_CHUNK_INSTRUCTIONS,
       synthesisInstructions: FOLLOW_UP_SYNTHESIS_INSTRUCTIONS,
       outputSchema: FOLLOW_UP_OUTPUT_SCHEMA,
@@ -156,6 +184,7 @@ const GEMINI_MODEL_PROFILES = Object.freeze({
     thinkingLevel: 'HIGH',
   }),
 });
+export const GEMINI_GENERATION_TEMPERATURE = 0.4;
 const GEMINI_APPLICATION_CREDENTIALS = process.env.GEMINI_APPLICATION_CREDENTIALS || process.env.GEMINI_GOOGLE_APPLICATION_CREDENTIALS || '';
 const MAX_OUTPUT_TOKENS = positiveInteger(process.env.GEMINI_INSIGHTS_MAX_OUTPUT_TOKENS, 16_384);
 const MAX_INPUT_TOKENS = positiveInteger(process.env.GEMINI_INSIGHTS_MAX_INPUT_TOKENS, 400_000);
@@ -301,7 +330,8 @@ async function buildInsightInput({ targetId, startDate, endDate }) {
   const records = await buildElementRecords(selectedRuns, targetId, ga4);
   const latestRun = selectedRuns.at(-1);
   const latestTarget = getTarget(latestRun, targetId);
-  const groups = buildGroups(records, ga4);
+  const selectedDates = selectedRuns.map((run) => run.date);
+  const groups = buildGroups(records, ga4, selectedDates);
   const pageConfig = getSktPageConfig(targetId);
   const trackingFields = pageConfig.usesGaArea ? 'ga_action/ga_area/ga_label' : 'ga_action/ga_label';
 
@@ -310,9 +340,15 @@ async function buildInsightInput({ targetId, startDate, endDate }) {
       purpose:
         `T world Shop ${pageConfig.pageType === 'exhibition' ? '기획전' : '메인'} 페이지의 클릭 요소가 자주 바뀌고 각 요소의 ${trackingFields} 및 GA4 성과를 파악하기 어려운 문제를 줄이기 위한 대시보드입니다.`,
       snapshotRule:
-        '봇이 매일 오전 10시 Asia/Seoul 기준으로 등록된 PC/MO 페이지 HTML과 클릭 어트리뷰트 요소를 저장합니다. 팝업은 검사 대상에서 제외합니다.',
+        '봇이 매일 오전 10시 Asia/Seoul 기준으로 등록된 PC 웹/모바일 웹/웹뷰 페이지 HTML과 클릭 어트리뷰트 요소를 저장합니다. 팝업은 검사 대상에서 제외합니다.',
       scopeRule:
         `수집 대상은 GNB/푸터를 제외한 콘텐츠 영역의 ${trackingFields} 요소입니다. ga_area는 기획전에서만 사용하며 값이 없을 수 있습니다.`,
+      channelRule:
+        `현재 페이지 채널은 ${pageConfig.experienceType}입니다. 이 채널의 화면 크기, 조작 방식, 탐색 맥락과 실제 요소 구성을 연결해 분석하되 제공되지 않은 다른 채널의 수치를 가정하지 않습니다.`,
+      campaignRule:
+        pageConfig.campaignContext
+          ? `현재 기획전은 ${pageConfig.campaignContext}입니다. Galaxy 상품 차별화, 혜택 정보 위계, 비교·선택 지원, CTA와 프로모션 서사를 분석합니다.`
+          : '현재 페이지는 상시 메인이며 특정 기획전 캠페인으로 가정하지 않습니다.',
       periodRule:
         `유지기간은 데이터 조회 기간 안에서 같은 ${trackingFields} 조합이 발견되어 유지된 날짜 구간이며 YYYY-MM-DD ~ YYYY-MM-DD 형식입니다. 예를 들어 2026-06-29 ~ 2026-06-29는 선택한 데이터 조회 기간 안에서 그 요소가 2026-06-29에만 관찰되었다는 뜻이지, 실제 서비스에서 그 요소가 2026-06-29에 처음 노출되었다는 뜻이 아닙니다.`,
       rowRule:
@@ -321,6 +357,8 @@ async function buildInsightInput({ targetId, startDate, endDate }) {
         '기본 왼쪽 화면은 선택 기간 안의 최신 캡처본입니다. 최신 캡처본에 없는 요소를 선택하면 그 요소가 존재하던 기간의 최신 캡처본을 보여줍니다.',
       metricsRule:
         `GA4 eventCount/session/user는 선택 기간과 페이지 기준으로 조회합니다. eventName=click, event_category=${pageConfig.eventCategory}${ga4.hostname ? `, hostName=${ga4.hostname}` : ''}${pageConfig.usesGaArea ? ', 요소 행은 event_area를 ga_area와 매칭' : ''} 조건입니다. ga_action 대분류의 세 지표는 같은 총합 조건에 event_action만 dimension으로 추가한 별도 보고서 값이며 URL 조건이나 하위 요소 합계를 사용하지 않습니다.`,
+      durationMetricRule:
+        'metricsPerObservedDay는 각 요소 또는 ga_action의 기간 전체 GA4 수치를 오전 10시 스냅샷에서 관찰된 날짜 수로 나눈 참고 지표입니다. 실제 노출수나 노출일당 성과가 아니며 반드시 관찰일당 값으로 해석합니다.',
       aiRule:
         'AI는 제공된 JSON에 있는 숫자와 위치 정보만 근거로 분석해야 하며, 날짜별 중복 관찰은 요소별 기간과 위치 범위 및 중요한 변경점으로 압축됩니다.',
       aiEvidenceLimit:
@@ -335,8 +373,11 @@ async function buildInsightInput({ targetId, startDate, endDate }) {
       finalUrl: latestTarget?.finalUrl || '',
       targetId,
       targetLabel: latestTarget?.label || targetId,
+      device: pageConfig.device,
+      experienceType: pageConfig.experienceType,
       pageType: pageConfig.pageType,
       exhibitionId: pageConfig.exhibitionId || '',
+      campaignContext: pageConfig.campaignContext || '',
       period: `${startDate} ~ ${endDate}`,
       days: selectedRuns.length,
       firstSnapshotDate: selectedRuns[0]?.date || '',
@@ -452,6 +493,10 @@ async function buildElementRecords(runs, targetId, ga4) {
     record.href = record.hrefs.size === 1 ? Array.from(record.hrefs)[0] : record.hrefs.size > 1 ? 'multiple' : '';
     record.metrics = metricsForRecord(record, ga4);
     record.ux = summarizeRecordUx(record);
+    record.metricsPerObservedDay = metricsPerObservedDay(
+      record.metrics,
+      record.ux.observedDays,
+    );
     record.observations = summarizeOccurrences(record.occurrences);
     record.correctedRawActions = Array.from(record.rawActions)
       .filter((action) => action !== record.tracking.action)
@@ -492,7 +537,7 @@ function metricsForRecord(record, ga4) {
   };
 }
 
-export function buildGroups(records, ga4 = {}) {
+export function buildGroups(records, ga4 = {}, selectedDates = []) {
   const groupsByKey = new Map();
 
   for (const record of records) {
@@ -505,11 +550,15 @@ export function buildGroups(records, ga4 = {}) {
         itemCount: 0,
         metrics: emptyMetrics(),
         metricKeys: new Set(),
+        observedDates: new Set(),
       };
       groupsByKey.set(action, group);
     }
 
     group.itemCount += 1;
+    for (const date of selectedDates) {
+      if (recordObservedOnDate(record, date)) group.observedDates.add(date);
+    }
     if (!group.metricKeys.has(record.metricKey)) {
       group.metricKeys.add(record.metricKey);
       group.metrics.eventCount += Number(record.metrics.eventCount || 0);
@@ -520,13 +569,20 @@ export function buildGroups(records, ga4 = {}) {
 
   return Array.from(groupsByKey.values())
     .map((group) => {
-      const { metricKeys, ...rest } = group;
+      const { metricKeys, observedDates, ...rest } = group;
       const actionMetrics = ga4.actionMetrics?.[makeGa4ActionMetricKey(group.action)];
       if (actionMetrics) {
         rest.metrics.eventCount = Number(actionMetrics.eventCount || 0);
         rest.metrics.sessions = Number(actionMetrics.sessions || 0);
         rest.metrics.activeUsers = Number(actionMetrics.activeUsers || 0);
       }
+      const dates = Array.from(observedDates).sort();
+      rest.observation = {
+        firstSeen: dates[0] || '',
+        lastSeen: dates.at(-1) || '',
+        observedDays: dates.length,
+        metricsPerObservedDay: metricsPerObservedDay(rest.metrics, dates.length),
+      };
       return rest;
     })
     .sort((left, right) => right.metrics.eventCount - left.metrics.eventCount);
@@ -716,12 +772,15 @@ export async function splitElementsToFit(
   return [...left, ...right];
 }
 
-function analysisForElements(analysis, elements, chunk) {
+export function analysisForElements(analysis, elements, chunk) {
+  const includedActions = new Set(
+    elements.map((record) => record.tracking.action || '(missing)'),
+  );
   return {
     dashboardLogic: analysis.dashboardLogic,
     page: analysis.page,
     ga4: analysis.ga4,
-    groups: buildGroups(elements),
+    groups: (analysis.groups || []).filter((group) => includedActions.has(group.action)),
     chunk: {
       ...chunk,
       elementCount: elements.length,
@@ -748,7 +807,8 @@ async function generatePromptJson(ai, prompt, parser, modelProfile) {
     model: modelProfile.id,
     contents: promptContents(prompt),
     config: {
-      temperature: 0.2,
+      systemInstruction: GEMINI_SYSTEM_INSTRUCTION,
+      temperature: GEMINI_GENERATION_TEMPERATURE,
       maxOutputTokens: MAX_OUTPUT_TOKENS,
       responseMimeType: 'application/json',
       ...(modelProfile.thinkingLevel
@@ -874,10 +934,13 @@ function parseGeminiJson(text) {
       headline: 'Gemini 응답을 JSON으로 해석하지 못했습니다.',
       summary: [trimmed.slice(0, 2000)],
       journeyInsights: [],
+      channelInsights: [],
       uxInsights: [],
       contentInsights: [],
+      durationInsights: [],
       metricInsights: [],
       sectionInsights: [],
+      opportunityInsights: [],
       measurementInsights: [],
       alternativeInterpretations: [],
       changes: [],
@@ -988,6 +1051,24 @@ function summarizeRecordUx(record) {
     periodCount: record.periods.length,
     occurrenceCountInLatestSnapshot: record.currentOccurrenceCount || 0,
   };
+}
+
+export function metricsPerObservedDay(metrics = emptyMetrics(), observedDays = 0) {
+  const days = Number(observedDays || 0);
+  if (!Number.isFinite(days) || days <= 0) {
+    return { eventCount: null, sessions: null, activeUsers: null };
+  }
+  return {
+    eventCount: roundNumber(Number(metrics.eventCount || 0) / days),
+    sessions: roundNumber(Number(metrics.sessions || 0) / days),
+    activeUsers: roundNumber(Number(metrics.activeUsers || 0) / days),
+  };
+}
+
+function recordObservedOnDate(record, date) {
+  return (record.periods || []).some(
+    (period) => date >= String(period.start || '') && date <= String(period.end || ''),
+  );
 }
 
 export function summarizeOccurrences(occurrences) {

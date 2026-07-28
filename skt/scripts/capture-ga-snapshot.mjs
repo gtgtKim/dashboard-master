@@ -4519,7 +4519,7 @@ function renderSnapshotCatalog() {
           <section class="help-section">
             <h3>Gemini 인사이트</h3>
             <p>GA Attributes 왼쪽의 Gemini 아이콘을 누르면 분석 모델을 선택할 수 있습니다. 기본값은 비용이 낮은 <strong>Gemini 3 Flash</strong>이며, 더 정밀한 분석이 필요할 때 <strong>Gemini 3.1 Pro</strong>를 선택할 수 있습니다. Pro를 선택하면 신규 요청 1회당 약 US$1의 비용 안내가 표시됩니다.</p>
-            <p>선택한 기간과 페이지의 모든 클릭 요소, 위치, 유지기간, GA4 수치, 대시보드 해석 규칙을 탐색 접점, UX/정보구조, 콘텐츠/프로모션, 수치 성과, 측정 품질, 기간 변화 관점에서 분석합니다. 날짜별 중복 관찰은 요소별 기간과 위치 변화로 압축하고, 입력이 클 때는 영역별로 나누어 분석한 뒤 통합합니다.</p>
+            <p>선택한 기간과 페이지의 모든 클릭 요소, 위치, 유지기간, GA4 수치, 대시보드 해석 규칙을 채널 특성, UX/정보구조, 콘텐츠/프로모션, 관찰 기간 대비 클릭 밀도, 추가 기회와 개선 관점에서 분석합니다. 기획전은 Samsung Galaxy 프로모션 맥락을 반영하고, PC 웹·모바일 웹·웹뷰 특성을 구분합니다. 날짜별 중복 관찰은 요소별 기간과 위치 변화로 압축하고, 입력이 클 때는 영역별로 나누어 분석한 뒤 통합합니다.</p>
             <p>같은 기간과 페이지, 같은 모델과 프롬프트는 캐시된 결과를 다시 보여주므로 추가 Gemini 과금이 발생하지 않습니다. 모델이 다르거나 프롬프트가 바뀌면 별도 결과로 새로 생성합니다.</p>
             <p>기본 인사이트 아래의 <strong>추가 질문</strong> 입력란에서 특정 영역 비교, 수치 근거, 유지기간 변화처럼 더 궁금한 내용을 이어서 물을 수 있습니다. 같은 대화의 최근 질문과 답변을 문맥으로 사용하며, 페이지 또는 조회 기간을 바꾸면 대화는 초기화됩니다.</p>
             <p>결과 칸이 열린 뒤에는 칸 하단 경계선을 위아래로 드래그해서 인사이트 영역 높이를 조정할 수 있습니다.</p>
@@ -5772,11 +5772,14 @@ function renderSnapshotCatalog() {
       const sections = [
         ['핵심 요약', insight.summary],
         ['탐색 접점 분석', insight.journeyInsights],
+        ['채널 특성 인사이트', insight.channelInsights],
         ['UX 인사이트', insight.uxInsights],
         ['콘텐츠·프로모션 인사이트', insight.contentInsights],
+        ['관찰 기간 대비 클릭 인사이트', insight.durationInsights],
         ['수치 인사이트', insight.metricInsights],
         ['콘텐츠 영역 인사이트', insight.sectionInsights],
-        ['측정·태깅 인사이트', insight.measurementInsights],
+        ['추가 기회 인사이트', insight.opportunityInsights],
+        ['측정 참고사항', insight.measurementInsights],
         ['대안 해석과 추가 데이터', insight.alternativeInterpretations],
         ['변화 포인트', insight.changes],
         ['주의사항', insight.watchouts],
