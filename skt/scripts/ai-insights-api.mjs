@@ -320,7 +320,7 @@ async function buildInsightInput({ targetId, startDate, endDate }) {
       previewRule:
         '기본 왼쪽 화면은 선택 기간 안의 최신 캡처본입니다. 최신 캡처본에 없는 요소를 선택하면 그 요소가 존재하던 기간의 최신 캡처본을 보여줍니다.',
       metricsRule:
-        `GA4 eventCount/session/user는 선택 기간과 페이지 기준으로 조회합니다. eventName=click, event_category=${pageConfig.eventCategory}${pageConfig.requireMobileHostname ? ', hostName=m.shop.tworld.co.kr' : ''}${pageConfig.usesGaArea ? ', event_area를 ga_area와 매칭' : ''} 조건입니다.`,
+        `GA4 eventCount/session/user는 선택 기간과 페이지 기준으로 조회합니다. eventName=click, event_category=${pageConfig.eventCategory}${ga4.hostname ? `, hostName=${ga4.hostname}` : ''}${pageConfig.usesGaArea ? ', 요소 행은 event_area를 ga_area와 매칭' : ''} 조건입니다. ga_action 대분류의 세 지표는 같은 총합 조건에 event_action만 dimension으로 추가한 별도 보고서 값이며 URL 조건이나 하위 요소 합계를 사용하지 않습니다.`,
       aiRule:
         'AI는 제공된 JSON에 있는 숫자와 위치 정보만 근거로 분석해야 하며, 날짜별 중복 관찰은 요소별 기간과 위치 범위 및 중요한 변경점으로 압축됩니다.',
       aiEvidenceLimit:
@@ -492,7 +492,7 @@ function metricsForRecord(record, ga4) {
   };
 }
 
-function buildGroups(records, ga4 = {}) {
+export function buildGroups(records, ga4 = {}) {
   const groupsByKey = new Map();
 
   for (const record of records) {
@@ -523,6 +523,7 @@ function buildGroups(records, ga4 = {}) {
       const { metricKeys, ...rest } = group;
       const actionMetrics = ga4.actionMetrics?.[makeGa4ActionMetricKey(group.action)];
       if (actionMetrics) {
+        rest.metrics.eventCount = Number(actionMetrics.eventCount || 0);
         rest.metrics.sessions = Number(actionMetrics.sessions || 0);
         rest.metrics.activeUsers = Number(actionMetrics.activeUsers || 0);
       }

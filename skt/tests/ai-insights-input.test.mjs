@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  buildGroups,
   estimatePromptTokens,
   normalizeGeminiModelProfile,
   normalizeFollowUpHistory,
@@ -8,6 +9,37 @@ import {
   splitElementsToFit,
   summarizeOccurrences,
 } from '../scripts/ai-insights-api.mjs';
+
+test('uses action-report metrics for every GA action group metric', () => {
+  const records = [
+    {
+      metricKey: 'banner::one',
+      tracking: { action: '메인 배너' },
+      metrics: { eventCount: 10, sessions: 9, activeUsers: 8 },
+    },
+    {
+      metricKey: 'banner::two',
+      tracking: { action: '메인 배너' },
+      metrics: { eventCount: 20, sessions: 18, activeUsers: 16 },
+    },
+  ];
+  const actionMetrics = {
+    [encodeURIComponent('메인 배너')]: {
+      eventCount: 25,
+      sessions: 21,
+      activeUsers: 19,
+    },
+  };
+
+  const groups = buildGroups(records, { actionMetrics });
+
+  assert.equal(groups.length, 1);
+  assert.deepEqual(groups[0].metrics, {
+    eventCount: 25,
+    sessions: 21,
+    activeUsers: 19,
+  });
+});
 
 test('defaults Gemini insights to Flash and allows only configured model profiles', () => {
   assert.equal(normalizeGeminiModelProfile(''), 'flash');

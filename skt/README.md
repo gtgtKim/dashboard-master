@@ -45,9 +45,11 @@ The GA4 service account JSON must exist on the host and is mounted into the cont
 Runtime GA4 metrics use Data API v1alpha Report Tasks with `samplingLevel: UNSAMPLED`.
 This mode requires a Google Analytics 360 property. Each date-range change creates a fresh report
 task; concurrent requests for the same page and range share only the in-progress request.
-Top-level totals come from the report's direct `TOTAL` aggregation. Group sessions and active users
-come from a separate report whose only grouping dimension is `event_action`; they are not sums of
-the element rows. The dashboard can export the selected, filtered, and sorted table as `.xlsx`.
+Top-level totals come from the report's direct `TOTAL` aggregation. Group event counts, sessions,
+and active users come from a separate report that uses the same event name, event category, and
+page-specific hostname filters as the total, with `event_action` as its only grouping dimension.
+No URL filter or element-row sum is used for group metrics. The dashboard can export the selected,
+filtered, and sorted table as `.xlsx`.
 
 Gemini insights default to the lower-cost `gemini-3-flash-preview`. Users can select
 `gemini-3.1-pro-preview` with high thinking when they need a more precise analysis.

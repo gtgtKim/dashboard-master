@@ -4511,7 +4511,7 @@ function renderSnapshotCatalog() {
               <li>MO 조회에는 페이지에 따라 <strong>hostName = m.shop.tworld.co.kr</strong> 또는 <strong>my-shop.tworld.co.kr</strong> 조건이 함께 적용됩니다.</li>
               <li>기획전은 선택 값인 <strong>event_area</strong>를 화면의 <strong>ga_area</strong>와 추가로 매칭합니다.</li>
               <li>최상단 총합은 표 행을 더하지 않고 선택 기간의 이벤트명·event_category·MO hostname 조건에 대한 GA4 <strong>TOTAL</strong> 집계를 직접 조회합니다.</li>
-              <li>대분류의 세션 수와 사용자 수는 하위 요소 수치를 더하지 않고 <strong>event_action</strong>만 dimension으로 둔 별도 보고서에서 가져옵니다.</li>
+              <li>대분류의 이벤트 수·세션 수·사용자 수는 하위 요소 수치를 더하지 않고, 최상단 총합과 같은 이벤트명·event_category·페이지별 hostname 조건에 <strong>event_action</strong>만 dimension으로 추가한 별도 보고서에서 가져옵니다. URL 조건은 사용하지 않습니다.</li>
               <li>표의 수치는 <strong>값 (전체 대비 비율)</strong> 형식입니다.</li>
               <li>오늘 날짜를 포함하면 GA4 특성상 일반적으로 현재 시점 기준 약 4시간 전 데이터까지만 조회될 수 있습니다. 확정 데이터는 보통 다음 날 이후가 더 안정적입니다.</li>
             </ul>
@@ -6002,11 +6002,13 @@ function renderSnapshotCatalog() {
         const actionMetrics = ga4Status.state === 'ok'
           ? ga4Status.actionMetrics?.[ga4ActionMetricKey(group.action)] || emptyMetrics()
           : null;
-        group.metrics = {
-          eventCount: detailMetrics.eventCount,
-          sessions: actionMetrics ? actionMetrics.sessions : detailMetrics.sessions,
-          activeUsers: actionMetrics ? actionMetrics.activeUsers : detailMetrics.activeUsers,
-        };
+        group.metrics = actionMetrics
+          ? {
+              eventCount: Number(actionMetrics.eventCount || 0),
+              sessions: Number(actionMetrics.sessions || 0),
+              activeUsers: Number(actionMetrics.activeUsers || 0),
+            }
+          : detailMetrics;
         group.defaultOrder = Math.min(...group.records.map((record) => record.defaultOrder || 0));
         group.firstSeen = group.records.map((record) => record.firstSeen).filter(Boolean).sort()[0] || '';
         group.lastSeen = group.records.map((record) => record.lastSeen).filter(Boolean).sort().at(-1) || '';

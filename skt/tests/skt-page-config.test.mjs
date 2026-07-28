@@ -118,6 +118,23 @@ test('builds exact action filters for alias aggregation reports', () => {
   assert.equal(actionFilter.inListFilter.caseSensitive, true);
 });
 
+test('uses total filters for action grouping without a URL condition', () => {
+  const filter = buildGa4DimensionFilter({
+    eventCategory: 'MTWD_main',
+    hostname: 'm.shop.tworld.co.kr',
+  });
+  const fieldNames = filter.andGroup.expressions.map(
+    (expression) => expression.filter.fieldName,
+  );
+
+  assert.deepEqual(fieldNames, [
+    'eventName',
+    GA4_CONFIG.dimensions.eventCategory,
+    GA4_CONFIG.dimensions.hostname,
+  ]);
+  assert.equal(fieldNames.includes('pageLocation'), false);
+});
+
 test('uses stable encoded keys for action-level metrics', () => {
   assert.equal(makeGa4ActionMetricKey('메인 배너'), '%EB%A9%94%EC%9D%B8%20%EB%B0%B0%EB%84%88');
   assert.equal(makeGa4ActionMetricKey(''), '(missing)');
