@@ -19,6 +19,7 @@ dashboard-master/
 
 ```text
 https://34.47.71.229/                 -> 404 Not Found
+https://34.47.71.229/pmk_hvc/         -> PMK HVC report
 https://34.47.71.229/skt/             -> SKT dashboard
 https://34.47.71.229/gentlemonster/   -> Gentle Monster dashboard
 ```
