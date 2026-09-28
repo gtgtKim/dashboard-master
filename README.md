@@ -18,7 +18,7 @@ dashboard-master/
 ## Routes
 
 ```text
-https://34.47.71.229/                 -> empty 204 response
+https://34.47.71.229/                 -> 404 Not Found
 https://34.47.71.229/skt/             -> SKT dashboard
 https://34.47.71.229/gentlemonster/   -> Gentle Monster dashboard
 ```
@@ -45,4 +45,3 @@ On the VM it is installed to:
 ```
 
 Use `infra/deploy/deploy-all.sh` on the VM to update both apps and reload Nginx.
-
