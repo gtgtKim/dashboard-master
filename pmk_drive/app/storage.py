@@ -167,4 +167,3 @@ class GCSStorage:
             version="v4", expiration=timedelta(seconds=60), method="GET",
             response_type="application/octet-stream",
             response_disposition="attachment; filename*=UTF-8''" + quote(name, safe=""))
-
