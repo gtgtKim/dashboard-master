@@ -2,6 +2,19 @@
 // Explicit interface strings only. File names, folder names and user input are never translated.
 window.PMK_I18N = (() => {
   const en = {
+    "PMK · 전체 메뉴": "PMK · All services",
+    "PMK 홈": "PMK home",
+    "전체 메뉴": "All services",
+    "사용할 서비스를 선택하세요.": "Choose a service to get started.",
+    "서비스 메뉴": "Services",
+    "파일": "Files",
+    "드라이브": "Drive",
+    "파일을 정리하고 공유하세요.": "Organize and share your files.",
+    "분석": "Analytics",
+    "HVC 리포트를 확인하세요.": "Explore your HVC reports.",
+    "모니터링": "Monitoring",
+    "웹사이트 성능을 확인하세요.": "Check your website performance.",
+    "열기": "Open",
     " · 업로드 완료": " · Uploaded",
     "0 B 사용 중": "0 B used",
     "12자 이상": "At least 12 characters",

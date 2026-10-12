@@ -502,6 +502,20 @@ def create_app(settings=None):
     api.mount("/static", StaticFiles(directory=static), name="static")
     outer.mount(cfg.base_path, api)
 
+    @outer.get("/pmk")
+    @outer.get("/pmk/")
+    def portal():
+        return HTMLResponse(
+            (static / "portal.html").read_text().replace("__BASE__", cfg.base_path),
+            headers={
+                "Cache-Control": "no-store",
+                "X-Content-Type-Options": "nosniff",
+                "Referrer-Policy": "no-referrer",
+                "X-Frame-Options": "DENY",
+                "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+            },
+        )
+
     @outer.get("/")
     def root():
         return RedirectResponse(cfg.base_path + "/")

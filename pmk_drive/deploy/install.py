@@ -66,16 +66,24 @@ try:
         except Exception:
             if attempt == 49: raise
             time.sleep(.3)
-    marker = '    # BEGIN PMK DRIVE'
-    if marker not in before:
-        assert 'location = /pmk_drive' not in before, 'Existing unmanaged route; inspect before changing'
-        anchor = '    location = /pmk_hvc {'
-        assert before.count(anchor) == 1, 'Expected existing HTTPS PMK location'
-        site.write_text(before.replace(anchor, (source / 'deploy/nginx-location.conf').read_text() + '\n' + anchor))
+    updated = before
+    for label, route, snippet in (
+        ('PMK DRIVE', '/pmk_drive', 'nginx-location.conf'),
+        ('PMK MENU', '/pmk', 'nginx-menu.conf'),
+    ):
+        marker = '    # BEGIN ' + label
+        if marker not in updated:
+            assert f'location = {route} {{' not in updated, 'Existing unmanaged route; inspect before changing'
+            assert f'location = {route}/ {{' not in updated, 'Existing unmanaged route; inspect before changing'
+            anchor = '    location = /pmk_hvc {'
+            assert updated.count(anchor) == 1, 'Expected existing HTTPS PMK location'
+            updated = updated.replace(anchor, (source / 'deploy' / snippet).read_text() + '\n' + anchor)
+    if updated != before:
+        site.write_text(updated)
     run('nginx', '-t')
     run('systemctl', 'reload', 'nginx')
     run('systemctl', 'enable', 'pmk-drive.service')
-    print('PMK Drive installed; existing routes retained; metadata in /var/lib/pmk-drive; objects in private GCS bucket.')
+    print('PMK menu and Drive installed; existing routes retained; metadata in /var/lib/pmk-drive; objects in private GCS bucket.')
 except Exception:
     site.write_text(before)
     run('nginx', '-t'); run('systemctl', 'reload', 'nginx')

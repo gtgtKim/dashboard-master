@@ -3,6 +3,8 @@
 팀이 Excel, PowerPoint, PDF 등 모든 형식의 파일을 폴더로 정리하고 공유하는 웹 앱입니다.
 운영 주소: https://34.47.71.229/pmk_drive/
 
+통합 메뉴: https://34.47.71.229/pmk — 드라이브, HVC, Web Vitals 바로가기. `/pmk/`도 지원합니다. 메뉴는 로그인 없이 열리며 각 서비스의 기존 로그인은 유지됩니다. 한국어/영어 선택은 드라이브와 공유하고 모바일에서는 메뉴를 한 열로 표시합니다.
+
 ## 기능
 
 - 중첩 폴더, 이름 변경, 이동, 검색, 형식 필터, 정렬, 목록/격자 보기
@@ -33,7 +35,7 @@
 - Source release: `/opt/pmk_drive/current`
 - Metadata DB: `/var/lib/pmk-drive/drive.sqlite3` (SQLite WAL, 영구 디렉터리)
 - Runtime config: `/etc/pmk-drive/app.env` (root-only); storage key: `/etc/pmk-drive/storage-key.json` (root:pmk-drive 0640)
-- Nginx: 기존 HTTPS server에 `deploy/nginx-location.conf` 블록만 추가
+- Nginx: 기존 HTTPS server에 `deploy/nginx-location.conf`, `deploy/nginx-menu.conf` 블록 추가
 
 운영 초기 관리자는 `admin`입니다. 기존 `/pmk_hvc`의 PBKDF2 검증 값을 복사해 같은 비밀번호로 로그인하도록 설정했습니다. 기존 서비스의 비밀번호나 세션을 변경하지 않습니다. 이후 두 서비스의 비밀번호 변경은 자동 동기화되지 않습니다. 별도 계정은 오른쪽 상단 계정 메뉴 → 팀원 계정 추가에서 만듭니다.
 
