@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PMK Drive · 팀의 파일을 한곳에</title>
+    <meta
+      name="description"
+      content="폴더로 정리하고, 파일을 안전하게 공유하는 PMK 팀 드라이브"
+    />
+    <link rel="icon" href="__BASE__/static/logo.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="__BASE__/static/style.css" />
+    <script src="__BASE__/static/app.js" defer></script>
+  </head>
+  <body data-base="__BASE__">
+    <div id="auth" class="auth-screen" hidden></div>
+    <div id="shell" hidden>
+      <aside class="sidebar">
+        <a class="brand" href="__BASE__/" aria-label="PMK Drive 홈"
+          ><img src="__BASE__/static/logo.svg" alt="" /><span
+            >PMK <strong>Drive</strong></span
+          ></a
+        >
+        <div class="workspace-label">TEAM WORKSPACE <span>공유 공간</span></div>
+        <button class="upload-main" id="upload-main">
+          <span data-icon="plus"></span> 새로 업로드
+          <span data-icon="upload"></span>
+        </button>
+        <nav aria-label="드라이브 탐색">
+          <button data-view="drive" class="nav-item active">
+            <span data-icon="drive"></span>내 드라이브
+          </button>
+          <button data-view="recent" class="nav-item">
+            <span data-icon="clock"></span>최근 파일
+          </button>
+          <button data-view="starred" class="nav-item">
+            <span data-icon="star"></span>중요 파일
+          </button>
+          <button data-view="shared" class="nav-item">
+            <span data-icon="link"></span>링크로 공유 중
+          </button>
+          <button data-view="trash" class="nav-item">
+            <span data-icon="trash"></span>휴지통
+          </button>
+        </nav>
+        <div class="folder-label">
+          폴더
+          <button class="icon-button" id="side-folder" aria-label="새 폴더">
+            <span data-icon="plus"></span>
+          </button>
+        </div>
+        <div id="folder-tree" class="folder-tree"></div>
+        <div class="sidebar-bottom">
+          <div class="storage-title">
+            <span data-icon="cloud"></span> 저장 공간
+            <span class="status-dot"></span>
+          </div>
+          <strong id="storage-used">0 B 사용 중</strong>
+          <p id="storage-description">파일 저장소</p>
+          <div class="sidebar-note">필요한 파일을, 필요한 순간에.</div>
+        </div>
+      </aside>
+      <div class="body-column">
+        <header class="topbar">
+          <button id="mobile-menu" class="icon-button" aria-label="메뉴">
+            <span data-icon="menu"></span></button
+          ><label class="search"
+            ><span data-icon="search"></span
+            ><input
+              id="search"
+              type="search"
+              placeholder="드라이브에서 파일 및 폴더 검색"
+              autocomplete="off"
+            /><kbd>/</kbd></label
+          >
+          <div class="topbar-right">
+            <span class="team-badge"
+              ><span class="status-dot"></span>팀 드라이브</span
+            ><button id="account" class="avatar" aria-label="계정 메뉴">
+              P
+            </button>
+          </div>
+        </header>
+        <main id="main">
+          <div class="breadcrumbs" id="breadcrumbs"></div>
+          <div class="page-heading">
+            <div>
+              <div class="eyebrow">YOUR TEAM, CONNECTED</div>
+              <h1 id="page-title">내 드라이브</h1>
+              <p id="page-description">함께 쓰는 파일, 한곳에서 깔끔하게.</p>
+            </div>
+            <div class="heading-actions">
+              <button id="new-folder" class="button">
+                <span data-icon="folder-plus"></span>새 폴더</button
+              ><button id="upload-button" class="button primary">
+                <span data-icon="upload"></span>파일 업로드
+              </button>
+            </div>
+          </div>
+          <div class="filters-bar">
+            <div id="filters" class="filters">
+              <button data-type="all" class="filter active">전체 파일</button
+              ><button data-type="excel" class="filter">
+                <span class="mini-type excel">X</span>스프레드시트</button
+              ><button data-type="ppt" class="filter">
+                <span class="mini-type ppt">P</span>프레젠테이션</button
+              ><button data-type="document" class="filter">
+                <span class="mini-type doc">D</span>문서
+              </button>
+            </div>
+            <div class="view-options">
+              <span id="item-count"></span
+              ><button
+                id="list-view"
+                class="icon-button selected"
+                aria-label="목록 보기"
+              >
+                <span data-icon="list"></span></button
+              ><button
+                id="grid-view"
+                class="icon-button"
+                aria-label="격자 보기"
+              >
+                <span data-icon="grid"></span>
+              </button>
+            </div>
+          </div>
+          <div id="selection-bar" class="selection-bar" hidden></div>
+          <div id="folder-section"></div>
+          <div id="files-section"></div>
+          <div class="drop-hint">
+            <span data-icon="upload"></span>파일을 이곳으로 드래그하여
+            업로드하세요<span>Excel, PowerPoint, PDF 및 모든 파일 형식</span>
+          </div>
+        </main>
+        <footer>
+          <span>PMK Drive</span
+          ><span id="footer-status">팀의 모든 파일을 연결합니다.</span>
+        </footer>
+      </div>
+    </div>
+    <div id="drop-overlay" hidden>
+      <span data-icon="upload"></span>
+      <h2>파일을 놓아 업로드하세요</h2>
+      <p>현재 폴더에 파일을 추가합니다</p>
+    </div>
+    <div id="upload-panel" class="upload-panel" hidden></div>
+    <div id="context-menu" class="context-menu" hidden></div>
+    <div id="toast" role="status" aria-live="polite" hidden></div>
+    <dialog id="dialog">
+      <form id="dialog-form"><div id="dialog-content"></div></form>
+    </dialog>
+    <input id="file-input" type="file" multiple hidden />
+  </body>
+</html>

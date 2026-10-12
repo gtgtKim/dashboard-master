@@ -1,0 +1,49 @@
+{
+  "url": "https://34.47.71.229/pmk_drive/",
+  "bytesVerified": 26214417,
+  "sha256": "83362ab40da9706445c1bc84b6def13d9821d454fe47c1c6abece6e894431cba",
+  "cloudRequests": [
+    {
+      "method": "PUT",
+      "status": 200
+    },
+    {
+      "method": "PUT",
+      "status": 200
+    },
+    {
+      "method": "PUT",
+      "status": 200
+    },
+    {
+      "method": "PUT",
+      "status": 200
+    }
+  ],
+  "checks": [
+    "authenticated folder creation",
+    "browser direct GCS upload",
+    "pause and resume",
+    "download bytes match",
+    "public share download bytes match",
+    "share revocation",
+    "rename and move",
+    "star",
+    "trash and restore",
+    "zero-byte cloud upload",
+    "unauthenticated API rejection",
+    "private object rejection",
+    "desktop and mobile layout"
+  ],
+  "consoleErrors": [],
+  "verifiedAt": "2026-10-12T16:04:08.216283+09:00",
+  "unitTestsPassed": 13,
+  "qaCleanup": {
+    "testNodesRemoved": 3,
+    "testAccountRemoved": true
+  },
+  "existingServices": {
+    "pmk-hvc": "active",
+    "pmk-webvital": "active"
+  }
+}
