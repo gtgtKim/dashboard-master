@@ -1,5 +1,8 @@
 "use strict";
+
 const BASE = document.body.dataset.base;
+const i18n = window.PMK_I18N;
+const t = i18n.t;
 const $ = (s, el = document) => el.querySelector(s),
   $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const paths = {
@@ -37,9 +40,13 @@ const esc = (v) =>
   String(v ?? "").replace(
     /[&<>"']/g,
     (c) =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
-        c
-      ],
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      })[c],
   );
 const state = {
   user: null,
@@ -49,6 +56,10 @@ const state = {
   type: "all",
   layout: localStorage.getItem("pmk-layout") || "list",
   items: [],
+  stats: {
+    bytes: 0,
+    files: 0,
+  },
   folders: [],
   selected: new Set(),
   sort: "name",
@@ -66,32 +77,39 @@ let refreshSequence = 0,
   searchTimer,
   jobs = [];
 function toast(message) {
-  $("#toast").textContent = message;
+  $("#toast").textContent = t(message);
   $("#toast").hidden = false;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => ($("#toast").hidden = true), 4500);
 }
 async function api(path, options = {}) {
-  const headers = { "X-PMK-Request": "1", ...options.headers };
+  const headers = {
+    "X-PMK-Request": "1",
+    "Accept-Language": i18n.language(),
+    ...options.headers,
+  };
   if (options.body && typeof options.body !== "string") {
     options.body = JSON.stringify(options.body);
     headers["Content-Type"] = "application/json";
   }
-  const response = await fetch(BASE + "/api" + path, { ...options, headers });
+  const response = await fetch(BASE + "/api" + path, {
+    ...options,
+    headers,
+  });
   if (!response.ok) {
-    let message = "요청을 처리할 수 없습니다.";
+    let message = t("요청을 처리할 수 없습니다.");
     try {
       const data = await response.json();
       message =
         typeof data.detail === "string"
           ? data.detail
-          : "입력값을 확인해 주세요.";
+          : t("입력값을 확인해 주세요.");
     } catch {}
     if (response.status === 401 && state.user) {
       state.user = null;
       showLogin();
     }
-    const error = new Error(message);
+    const error = new Error(t(message));
     error.status = response.status;
     throw error;
   }
@@ -101,10 +119,12 @@ function bytes(n) {
   if (!n) return "0 B";
   const units = ["B", "KB", "MB", "GB", "TB"];
   const i = Math.min(4, Math.floor(Math.log(n) / Math.log(1024)));
-  return `${(n / 1024 ** i).toLocaleString("ko-KR", { maximumFractionDigits: i > 1 ? 1 : 0 })} ${units[i]}`;
+  return `${(n / 1024 ** i).toLocaleString(i18n.locale(), {
+    maximumFractionDigits: i > 1 ? 1 : 0,
+  })} ${units[i]}`;
 }
 function date(n) {
-  return new Date(n * 1000).toLocaleDateString("ko-KR", {
+  return new Date(n * 1000).toLocaleDateString(i18n.locale(), {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -113,20 +133,21 @@ function date(n) {
 function fileType(name) {
   const ext = name.split(".").pop().toLowerCase();
   if (["xlsx", "xls", "csv", "ods"].includes(ext))
-    return ["excel", "X", "스프레드시트"];
-  if (["ppt", "pptx"].includes(ext)) return ["ppt", "P", "프레젠테이션"];
-  if (ext === "pdf") return ["pdf", "PDF", "PDF 문서"];
-  if (["doc", "docx", "txt", "hwp"].includes(ext)) return ["doc", "D", "문서"];
-  return ["other", ext.slice(0, 3).toUpperCase(), "파일"];
+    return ["excel", "X", t("스프레드시트")];
+  if (["ppt", "pptx"].includes(ext)) return ["ppt", "P", t("프레젠테이션")];
+  if (ext === "pdf") return ["pdf", "PDF", t("PDF 문서")];
+  if (["doc", "docx", "txt", "hwp"].includes(ext))
+    return ["doc", "D", t("문서")];
+  return ["other", ext.slice(0, 3).toUpperCase(), t("파일")];
 }
 function fileIcon(name) {
   const [cls, label] = fileType(name);
   return `<span class="file-type ${cls}">${esc(label)}</span>`;
 }
-function dialog(title, body, submit, action = "확인") {
+function dialog(title, body, submit, action = t("확인")) {
   const d = $("#dialog");
   $("#dialog-content").innerHTML =
-    `<h2>${esc(title)}</h2>${body}<div class="form-error" role="alert"></div><div class="dialog-actions"><button type="button" class="button" id="dialog-cancel">취소</button>${submit ? `<button type="submit" class="button primary">${esc(action)}</button>` : ""}</div>`;
+    `<h2>${esc(title)}</h2>${body}<div class="form-error" role="alert"></div><div class="dialog-actions"><button type="button" class="button" id="dialog-cancel">${t("취소")}</button>${submit ? `<button type="submit" class="button primary">${esc(action)}</button>` : ""}</div>`;
   $("#dialog-cancel").onclick = () => d.close();
   $("#dialog-form").onsubmit = async (e) => {
     e.preventDefault();
@@ -158,12 +179,11 @@ async function refresh() {
     state.items = data.items;
     state.folders = data.folders;
     state.selected.clear();
-    $("#storage-used").textContent = bytes(data.stats.bytes) + " 사용 중";
-    $("#footer-status").textContent =
-      `총 ${data.stats.files.toLocaleString()}개 파일 · 팀 공유 공간`;
+    state.stats = data.stats;
+    renderStats();
     render();
     if (data.items.length >= data.limit)
-      toast("최대 2,000개 항목을 표시합니다. 검색으로 범위를 좁혀 주세요.");
+      toast(t("최대 2,000개 항목을 표시합니다. 검색으로 범위를 좁혀 주세요."));
   } catch (err) {
     toast(err.message);
   }
@@ -178,25 +198,32 @@ function navigate(view = "drive", parent = null) {
   history.replaceState(
     null,
     "",
-    BASE + "/#" + new URLSearchParams({ view, parent: parent || "" }),
+    BASE +
+      "/#" +
+      new URLSearchParams({
+        view,
+        parent: parent || "",
+      }),
   );
   refresh();
 }
 function render() {
   const current = state.folders.find((f) => f.id === state.parent);
   $("#page-title").textContent = state.q
-    ? `“${state.q}” 검색 결과`
+    ? t("“{query}” 검색 결과", {
+        query: state.q,
+      })
     : state.view === "drive" && current
       ? current.name
-      : titles[state.view];
+      : t(titles[state.view]);
   $("#page-description").textContent =
     state.view === "trash"
-      ? "삭제한 파일과 폴더를 복원할 수 있습니다."
+      ? t("삭제한 파일과 폴더를 복원할 수 있습니다.")
       : state.view === "shared"
-        ? "만료 기한이 있는 링크로 파일을 공유합니다."
+        ? t("만료 기한이 있는 링크로 파일을 공유합니다.")
         : state.view === "starred"
-          ? "자주 찾는 파일을 가까이 두세요."
-          : "함께 쓰는 파일, 한곳에서 깔끔하게.";
+          ? t("자주 찾는 파일을 가까이 두세요.")
+          : t("함께 쓰는 파일, 한곳에서 깔끔하게.");
   $$("[data-view]").forEach((b) =>
     b.classList.toggle("active", b.dataset.view === state.view),
   );
@@ -205,7 +232,9 @@ function render() {
   );
   $("#list-view").classList.toggle("selected", state.layout === "list");
   $("#grid-view").classList.toggle("selected", state.layout === "grid");
-  $("#item-count").textContent = `${state.items.length}개 항목`;
+  $("#item-count").textContent = t("{count}개 항목", {
+    count: state.items.length,
+  });
   const allow = state.view === "drive";
   $("#new-folder").hidden = !allow;
   $("#upload-button").hidden = !allow;
@@ -216,7 +245,7 @@ function render() {
   let sorted = [...state.items].sort((a, b) => {
     let c =
       state.sort === "name"
-        ? a.name.localeCompare(b.name, "ko")
+        ? a.name.localeCompare(b.name, i18n.language())
         : a[state.sort] - b[state.sort];
     return state.asc ? c : -c;
   });
@@ -224,22 +253,57 @@ function render() {
   const folders = sorted.filter((n) => n.kind === "folder");
   const files = sorted.filter((n) => n.kind === "file");
   $("#folder-section").innerHTML = folders.length
-    ? `<div class="section-heading"><h2>폴더 <span>${folders.length}</span></h2></div><div class="folder-grid">${folders.map((n) => `<div class="folder-card" data-id="${n.id}" role="group">${icon("folder")}<button class="folder-name" data-open="${n.id}">${esc(n.name)}<small>${esc(n.owner)} · ${date(n.updated)}</small></button><button class="icon-button" data-menu="${n.id}" aria-label="${esc(n.name)} 메뉴">${icon("more")}</button></div>`).join("")}</div>`
+    ? `<div class="section-heading"><h2>${t("폴더")} <span>${folders.length}</span></h2></div><div class="folder-grid">${folders
+        .map(
+          (n) =>
+            `<div class="folder-card" data-id="${n.id}" role="group">${icon("folder")}<button class="folder-name" data-open="${n.id}">${esc(n.name)}<small>${esc(n.owner)} · ${date(n.updated)}</small></button><button class="icon-button" data-menu="${n.id}" aria-label="${esc(
+              t("{name} 메뉴", {
+                name: n.name,
+              }),
+            )}">${icon("more")}</button></div>`,
+        )
+        .join("")}</div>`
     : "";
   if (!state.items.length) {
     $("#files-section").innerHTML =
-      `<div class="empty"><div class="empty-icon">${icon(state.q ? "search" : state.view === "trash" ? "trash" : "folder")}</div><h3>${state.q ? "일치하는 파일이 없습니다" : state.view === "trash" ? "휴지통이 비어 있습니다" : state.view === "starred" ? "중요한 파일을 표시해 보세요" : state.view === "shared" ? "공유 중인 링크가 없습니다" : "첫 번째 파일을 추가해 보세요"}</h3><p>${state.q ? "다른 검색어로 다시 검색해 주세요." : state.view === "drive" ? "새 폴더로 업무를 정리하고<br>팀과 함께 사용할 파일을 업로드하세요." : "파일 메뉴에서 필요한 작업을 선택할 수 있습니다."}</p>${state.view === "drive" && !state.q ? '<button class="button primary" id="empty-upload">' + icon("upload") + "파일 업로드</button>" : ""}</div>`;
+      `<div class="empty"><div class="empty-icon">${icon(state.q ? "search" : state.view === "trash" ? "trash" : "folder")}</div><h3>${state.q ? t("일치하는 파일이 없습니다") : state.view === "trash" ? t("휴지통이 비어 있습니다") : state.view === "starred" ? t("중요한 파일을 표시해 보세요") : state.view === "shared" ? t("공유 중인 링크가 없습니다") : t("첫 번째 파일을 추가해 보세요")}</h3><p>${state.q ? t("다른 검색어로 다시 검색해 주세요.") : state.view === "drive" ? `${t("새 폴더로 업무를 정리하고")}<br>${t("팀과 함께 사용할 파일을 업로드하세요.")}` : t("파일 메뉴에서 필요한 작업을 선택할 수 있습니다.")}</p>${state.view === "drive" && !state.q ? '<button class="button primary" id="empty-upload">' + icon("upload") + `${t("파일 업로드")}</button>` : ""}</div>`;
     $("#empty-upload")?.addEventListener("click", () =>
       $("#file-input").click(),
     );
     return;
   }
-  const heading = `<div class="section-heading"><h2>${state.view === "recent" ? "최근 파일" : "파일"} <span>${files.length}</span></h2><button class="icon-button" id="sort-toggle" aria-label="정렬 방향 변경">${icon("list")}</button></div>`;
+  const heading = `<div class="section-heading"><h2>${state.view === "recent" ? t("최근 파일") : t("파일")} <span>${files.length}</span></h2><button class="icon-button" id="sort-toggle" aria-label="${t("정렬 방향 변경")}">${icon("list")}</button></div>`;
   $("#files-section").innerHTML = files.length
     ? heading +
       (state.layout === "grid"
-        ? `<div class="grid-files">${files.map((n) => `<article class="file-card" data-id="${n.id}"><div class="file-preview">${fileIcon(n.name)}</div><div class="file-card-bottom"><input type="checkbox" data-select="${n.id}" aria-label="${esc(n.name)} 선택"><div><button class="file-name" data-open="${n.id}">${esc(n.name)}</button><small>${bytes(n.size)} · ${date(n.updated)}</small></div><button class="icon-button" data-menu="${n.id}" aria-label="${esc(n.name)} 메뉴">${icon("more")}</button></div></article>`).join("")}</div>`
-        : `<div class="table-wrap"><table class="file-table"><thead><tr><th><input type="checkbox" id="select-all" aria-label="모든 파일 선택"></th><th><button data-sort="name">이름 ${state.sort === "name" ? (state.asc ? "↑" : "↓") : ""}</button></th><th><button data-sort="updated">수정한 날짜</button></th><th><button data-sort="size">파일 크기</button></th><th>소유자</th><th></th></tr></thead><tbody>${files.map((n) => `<tr data-id="${n.id}"><td><input type="checkbox" data-select="${n.id}" aria-label="${esc(n.name)} 선택"></td><td><div class="file-cell">${fileIcon(n.name)}<div class="file-text"><button class="file-name" data-open="${n.id}">${esc(n.name)} ${n.starred ? '<span class="starred-mark">★</span>' : ""}</button><small>${fileType(n.name)[2]}</small></div></div></td><td>${date(n.updated)}</td><td>${bytes(n.size)}</td><td><span class="owner"><i>${esc(n.owner.slice(0, 1))}</i>${esc(n.owner)}</span></td><td><button class="icon-button" data-menu="${n.id}" aria-label="${esc(n.name)} 메뉴">${icon("more")}</button></td></tr>`).join("")}</tbody></table></div>`)
+        ? `<div class="grid-files">${files
+            .map(
+              (n) =>
+                `<article class="file-card" data-id="${n.id}"><div class="file-preview">${fileIcon(n.name)}</div><div class="file-card-bottom"><input type="checkbox" data-select="${n.id}" aria-label="${esc(
+                  t("{name} 선택", {
+                    name: n.name,
+                  }),
+                )}"><div><button class="file-name" data-open="${n.id}">${esc(n.name)}</button><small>${bytes(n.size)} · ${date(n.updated)}</small></div><button class="icon-button" data-menu="${n.id}" aria-label="${esc(
+                  t("{name} 메뉴", {
+                    name: n.name,
+                  }),
+                )}">${icon("more")}</button></div></article>`,
+            )
+            .join("")}</div>`
+        : `<div class="table-wrap"><table class="file-table"><thead><tr><th><input type="checkbox" id="select-all" aria-label="${t("모든 파일 선택")}"></th><th><button data-sort="name">${t("이름")} ${state.sort === "name" ? (state.asc ? "↑" : "↓") : ""}</button></th><th><button data-sort="updated">${t("수정한 날짜")}</button></th><th><button data-sort="size">${t("파일 크기")}</button></th><th>${t("소유자")}</th><th></th></tr></thead><tbody>${files
+            .map(
+              (n) =>
+                `<tr data-id="${n.id}"><td><input type="checkbox" data-select="${n.id}" aria-label="${esc(
+                  t("{name} 선택", {
+                    name: n.name,
+                  }),
+                )}"></td><td><div class="file-cell">${fileIcon(n.name)}<div class="file-text"><button class="file-name" data-open="${n.id}">${esc(n.name)} ${n.starred ? '<span class="starred-mark">★</span>' : ""}</button><small>${fileType(n.name)[2]}</small></div></div></td><td>${date(n.updated)}</td><td>${bytes(n.size)}</td><td><span class="owner"><i>${esc(n.owner.slice(0, 1))}</i>${esc(n.owner)}</span></td><td><button class="icon-button" data-menu="${n.id}" aria-label="${esc(
+                  t("{name} 메뉴", {
+                    name: n.name,
+                  }),
+                )}">${icon("more")}</button></td></tr>`,
+            )
+            .join("")}</tbody></table></div>`)
     : "";
   $("#select-all")?.addEventListener("change", (e) => {
     state.selected = new Set(e.target.checked ? files.map((n) => n.id) : []);
@@ -263,7 +327,7 @@ function renderTree() {
   }
   $("#folder-tree").innerHTML =
     branch(null, 0) ||
-    '<div class="tree-empty">새 폴더를 만들면<br>이곳에서 빠르게 찾을 수 있어요.</div>';
+    `<div class="tree-empty">${t("새 폴더를 만들면")}<br>${t("이곳에서 빠르게 찾을 수 있어요.")}</div>`;
 }
 function renderBreadcrumbs() {
   let chain = [],
@@ -275,7 +339,7 @@ function renderBreadcrumbs() {
     id = f.parent_id;
   }
   $("#breadcrumbs").innerHTML =
-    `<button data-breadcrumb="">${icon("home")}</button>${icon("chevron")}<button data-breadcrumb="">${state.view === "drive" ? "내 드라이브" : titles[state.view]}</button>` +
+    `<button data-breadcrumb="">${icon("home")}</button>${icon("chevron")}<button data-breadcrumb="">${state.view === "drive" ? t("내 드라이브") : t(titles[state.view])}</button>` +
     chain
       .map(
         (f) =>
@@ -287,8 +351,9 @@ function renderBreadcrumbs() {
 function renderSelection() {
   const count = state.selected.size;
   $("#selection-bar").hidden = !count;
-  $("#selection-bar").innerHTML =
-    `<span>${count}개 선택됨</span><button data-bulk="${state.view === "trash" ? "restore" : "download"}">${icon(state.view === "trash" ? "restore" : "download")}${state.view === "trash" ? "복원" : "다운로드"}</button>${state.view !== "trash" ? '<button data-bulk="trash">' + icon("trash") + "휴지통으로 이동</button>" : ""}<button data-bulk="clear" aria-label="선택 해제">${icon("close")}</button>`;
+  $("#selection-bar").innerHTML = `<span>${t("{count}개 선택됨", {
+    count,
+  })}</span><button data-bulk="${state.view === "trash" ? "restore" : "download"}">${icon(state.view === "trash" ? "restore" : "download")}${state.view === "trash" ? t("복원") : t("다운로드")}</button>${state.view !== "trash" ? '<button data-bulk="trash">' + icon("trash") + `${t("휴지통으로 이동")}</button>` : ""}<button data-bulk="clear" aria-label="${t("선택 해제")}">${icon("close")}</button>`;
   $$("[data-select]").forEach(
     (el) => (el.checked = state.selected.has(el.dataset.select)),
   );
@@ -301,22 +366,22 @@ function showContext(nid, anchor) {
   if (!n) return;
   const actions =
     state.view === "trash"
-      ? [["restore", "restore", "복원"]]
+      ? [["restore", "restore", t("복원")]]
       : [
           ...(n.kind === "file"
             ? [
-                ["download", "download", "다운로드"],
-                ["share", "link", "공유 링크"],
+                ["download", "download", t("다운로드")],
+                ["share", "link", t("공유 링크")],
               ]
-            : [["open", "folder", "폴더 열기"]]),
+            : [["open", "folder", t("폴더 열기")]]),
           [
             "star",
             "star",
-            n.starred ? "중요 파일에서 해제" : "중요 파일로 표시",
+            n.starred ? t("중요 파일에서 해제") : t("중요 파일로 표시"),
           ],
-          ["rename", "edit", "이름 변경"],
-          ["move", "move", "이동"],
-          ["trash", "trash", "휴지통으로 이동"],
+          ["rename", "edit", t("이름 변경")],
+          ["move", "move", t("이동")],
+          ["trash", "trash", t("휴지통으로 이동")],
         ];
   const menu = $("#context-menu");
   menu.innerHTML = actions
@@ -354,17 +419,19 @@ async function action(type, nid) {
   }
   if (type === "rename") {
     dialog(
-      "이름 변경",
-      `<label class="field">새 이름<input name="name" value="${esc(n.name)}" required maxlength="240"></label>`,
+      t("이름 변경"),
+      `<label class="field">${t("새 이름")}<input name="name" value="${esc(n.name)}" required maxlength="240"></label>`,
       async (data) => {
         await api("/nodes/" + nid, {
           method: "PATCH",
-          body: { name: data.get("name") },
+          body: {
+            name: data.get("name"),
+          },
         });
         await refresh();
-        toast("이름을 변경했습니다.");
+        toast(t("이름을 변경했습니다."));
       },
-      "변경",
+      t("변경"),
     );
     return;
   }
@@ -393,17 +460,23 @@ async function action(type, nid) {
       return names.join(" / ");
     }
     dialog(
-      "폴더로 이동",
-      `<p>${esc(n.name)}의 새 위치를 선택하세요.</p><label class="field">대상 폴더<select name="parent"><option value="">내 드라이브</option>${options.map((f) => `<option value="${f.id}">${esc(fullName(f))}</option>`).join("")}</select></label>`,
+      t("폴더로 이동"),
+      `<p>${esc(
+        t("{name}의 새 위치를 선택하세요.", {
+          name: n.name,
+        }),
+      )}</p><label class="field">${t("대상 폴더")}<select name="parent"><option value="">${t("내 드라이브")}</option>${options.map((f) => `<option value="${f.id}">${esc(fullName(f))}</option>`).join("")}</select></label>`,
       async (data) => {
         await api("/nodes/" + nid, {
           method: "PATCH",
-          body: { parent_id: data.get("parent") || null },
+          body: {
+            parent_id: data.get("parent") || null,
+          },
         });
         await refresh();
-        toast("이동했습니다.");
+        toast(t("이동했습니다."));
       },
-      "이동",
+      t("이동"),
     );
     return;
   }
@@ -413,14 +486,29 @@ async function action(type, nid) {
   }
   if (type === "trash") {
     dialog(
-      "휴지통으로 이동",
-      `<p>“${esc(n.name)}”${n.kind === "folder" ? " 및 하위 항목을" : "을"} 휴지통으로 이동합니다. 나중에 복원할 수 있습니다.</p>`,
+      t("휴지통으로 이동"),
+      `<p>${esc(
+        t(
+          n.kind === "folder"
+            ? t(
+                "\u201C{name}\u201D 및 하위 항목을 휴지통으로 이동합니다. 나중에 복원할 수 있습니다.",
+              )
+            : t(
+                "\u201C{name}\u201D을 휴지통으로 이동합니다. 나중에 복원할 수 있습니다.",
+              ),
+          {
+            name: n.name,
+          },
+        ),
+      )}</p>`,
       async () => {
-        await api("/nodes/" + nid, { method: "DELETE" });
+        await api("/nodes/" + nid, {
+          method: "DELETE",
+        });
         await refresh();
-        toast("휴지통으로 이동했습니다.");
+        toast(t("휴지통으로 이동했습니다."));
       },
-      "이동",
+      t("이동"),
     );
     return;
   }
@@ -429,42 +517,53 @@ async function action(type, nid) {
   });
   await refresh();
   toast(
-    type === "restore" ? "복원했습니다." : "중요 파일 표시를 변경했습니다.",
+    type === "restore"
+      ? t("복원했습니다.")
+      : t("중요 파일 표시를 변경했습니다."),
   );
 }
 async function shareDialog(n) {
   const existing = await api("/nodes/" + n.id + "/shares");
   dialog(
-    "파일 공유",
-    `<p><strong>${esc(n.name)}</strong><br>링크를 가진 사람은 로그인 없이 이 파일을 다운로드할 수 있습니다.</p><label class="field">링크 유효 기간<select name="days"><option value="7">7일</option><option value="1">1일</option><option value="30">30일</option></select></label><div id="generated-link"></div><div id="existing-links">${existing.map((s) => `<div class="share-existing"><span>${date(s.expires)}까지 유효한 링크</span><button type="button" data-revoke="${s.id}">공유 해제</button></div>`).join("")}</div>`,
+    t("파일 공유"),
+    `<p><strong>${esc(n.name)}</strong><br>${t("링크를 가진 사람은 로그인 없이 이 파일을 다운로드할 수 있습니다.")}</p><label class="field">${t("링크 유효 기간")}<select name="days"><option value="7">${t("7일")}</option><option value="1">${t("1일")}</option><option value="30">${t("30일")}</option></select></label><div id="generated-link"></div><div id="existing-links">${existing
+      .map(
+        (s) =>
+          `<div class="share-existing"><span>${t("{date}까지 유효한 링크", {
+            date: date(s.expires),
+          })}</span><button type="button" data-revoke="${s.id}">${t("공유 해제")}</button></div>`,
+      )
+      .join("")}</div>`,
     null,
   );
   $(".dialog-actions").insertAdjacentHTML(
     "afterbegin",
-    '<button type="button" class="button primary" id="create-link">링크 만들기</button>',
+    `<button type="button" class="button primary" id="create-link">${t("링크 만들기")}</button>`,
   );
-  $("#dialog-cancel").textContent = "닫기";
+  $("#dialog-cancel").textContent = t("닫기");
   $("#create-link").onclick = async (e) => {
     e.target.disabled = true;
     try {
       const result = await api("/nodes/" + n.id + "/shares", {
         method: "POST",
-        body: { days: Number($("[name=days]").value) },
+        body: {
+          days: Number($("[name=days]").value),
+        },
       });
       $("#generated-link").innerHTML =
-        `<div class="share-link"><input readonly aria-label="공유 링크" value="${esc(result.url)}"><button type="button" class="button" id="copy-link">복사</button></div>`;
+        `<div class="share-link"><input readonly aria-label="${t("공유 링크")}" value="${esc(result.url)}"><button type="button" class="button" id="copy-link">${t("복사")}</button></div>`;
       $("#copy-link").onclick = async () => {
         try {
           await navigator.clipboard.writeText(result.url);
-          toast("공유 링크를 복사했습니다.");
+          toast(t("공유 링크를 복사했습니다."));
         } catch {
           $("#generated-link input").select();
-          toast("선택된 링크를 복사해 주세요.");
+          toast(t("선택된 링크를 복사해 주세요."));
         }
       };
       $("#existing-links").insertAdjacentHTML(
         "afterbegin",
-        `<div class="share-existing"><span>새로 만든 링크</span><button type="button" data-revoke="${result.id}">공유 해제</button></div>`,
+        `<div class="share-existing"><span>${t("새로 만든 링크")}</span><button type="button" data-revoke="${result.id}">${t("공유 해제")}</button></div>`,
       );
       await refresh();
     } catch (err) {
@@ -477,31 +576,37 @@ async function shareDialog(n) {
 function newFolder() {
   if (state.view !== "drive") navigate("drive");
   dialog(
-    "새 폴더",
-    `<label class="field">폴더 이름<input name="name" placeholder="예: 2026 사업 계획" required maxlength="240" autocomplete="off"></label>`,
+    t("새 폴더"),
+    `<label class="field">${t("폴더 이름")}<input name="name" placeholder="${t("예: 2026 사업 계획")}" required maxlength="240" autocomplete="off"></label>`,
     async (data) => {
       await api("/folders", {
         method: "POST",
-        body: { name: data.get("name"), parent_id: state.parent },
+        body: {
+          name: data.get("name"),
+          parent_id: state.parent,
+        },
       });
       await refresh();
-      toast("폴더를 만들었습니다.");
+      toast(t("폴더를 만들었습니다."));
     },
-    "만들기",
+    t("만들기"),
   );
 }
 function showLogin() {
   $("#shell").hidden = true;
   $("#auth").hidden = false;
   $("#auth").innerHTML =
-    `<div class="auth-card"><a class="brand" href="${BASE}/"><img src="${BASE}/static/logo.svg" alt=""><span>PMK <strong>Drive</strong></span></a><h1>팀의 파일을 한곳에.</h1><p>파일을 정리하고, 아이디어를 나누세요.<br>PMK 팀 드라이브에 오신 것을 환영합니다.</p><form id="login-form"><label class="field">아이디<input name="username" autocomplete="username" required placeholder="아이디를 입력하세요"></label><label class="field">비밀번호<input type="password" name="password" autocomplete="current-password" required placeholder="비밀번호를 입력하세요"></label><div class="form-error" role="alert"></div><button class="button primary" type="submit">로그인 ${icon("chevron")}</button></form><p class="auth-note">계정이 필요하면 팀 관리자에게 문의하세요.</p></div>`;
+    `<div class="auth-card login-card">${languagePicker()}<a class="brand" href="${BASE}/"><img src="${BASE}/static/logo.svg" alt=""><span>PMK <strong>Drive</strong></span></a><form id="login-form"><label class="field"><span data-i18n="아이디">${t("아이디")}</span><input name="username" autocomplete="username" aria-label="${t("아이디")}" data-i18n-aria-label="아이디" required></label><label class="field"><span data-i18n="비밀번호">${t("비밀번호")}</span><input type="password" name="password" autocomplete="current-password" aria-label="${t("비밀번호")}" data-i18n-aria-label="비밀번호" required></label><div class="form-error" role="alert"></div><button class="button primary" type="submit"><span data-i18n="로그인">${t("로그인")}</span>${icon("chevron")}</button></form></div>`;
   $("#login-form").onsubmit = async (e) => {
     e.preventDefault();
     const button = $("button", e.target);
     button.disabled = true;
     try {
       const form = new FormData(e.target);
-      await api("/login", { method: "POST", body: Object.fromEntries(form) });
+      await api("/login", {
+        method: "POST",
+        body: Object.fromEntries(form),
+      });
       await start();
     } catch (err) {
       $(".form-error", e.target).textContent = err.message;
@@ -512,18 +617,20 @@ function showLogin() {
 }
 function accountMenu() {
   dialog(
-    "계정",
-    `<p>${esc(state.user.display_name)} · ${esc(state.user.username)}<br>모든 팀원은 이 공간에서 파일을 함께 관리합니다.</p>${state.user.role === "admin" ? '<button type="button" class="button" id="add-member">' + icon("users") + "팀원 계정 추가</button>" : ""}`,
+    t("계정"),
+    `<p>${esc(state.user.display_name)} · ${esc(state.user.username)}<br>${t("모든 팀원은 이 공간에서 파일을 함께 관리합니다.")}</p>${state.user.role === "admin" ? '<button type="button" class="button" id="add-member">' + icon("users") + `${t("팀원 계정 추가")}</button>` : ""}`,
     null,
   );
   $(".dialog-actions").insertAdjacentHTML(
     "afterbegin",
-    '<button type="button" id="logout" class="button">로그아웃</button>',
+    `<button type="button" id="logout" class="button">${t("로그아웃")}</button>`,
   );
-  $("#dialog-cancel").textContent = "닫기";
+  $("#dialog-cancel").textContent = t("닫기");
   $("#logout").onclick = async () => {
     jobs.forEach(pauseJob);
-    await api("/logout", { method: "POST" });
+    await api("/logout", {
+      method: "POST",
+    });
     $("#dialog").close();
     state.user = null;
     jobs = [];
@@ -532,23 +639,44 @@ function accountMenu() {
   };
   $("#add-member")?.addEventListener("click", () =>
     dialog(
-      "팀원 계정 추가",
-      '<p>새 팀원은 모든 파일을 업로드·다운로드하고 관리할 수 있습니다.</p><label class="field">이름<input name="display_name" required maxlength="80"></label><label class="field">아이디<input name="username" required maxlength="80" autocomplete="off"></label><label class="field">초기 비밀번호<input name="password" type="password" required minlength="12" maxlength="256" autocomplete="new-password" placeholder="12자 이상"></label>',
+      t("팀원 계정 추가"),
+      `<p>${t("새 팀원은 모든 파일을 업로드\xB7다운로드하고 관리할 수 있습니다.")}</p><label class="field">${t("이름")}<input name="display_name" required maxlength="80"></label><label class="field">${t("아이디")}<input name="username" required maxlength="80" autocomplete="off"></label><label class="field">${t("초기 비밀번호")}<input name="password" type="password" required minlength="12" maxlength="256" autocomplete="new-password" placeholder="${t("12자 이상")}"></label>`,
       async (data) => {
         await api("/members", {
           method: "POST",
           body: Object.fromEntries(data),
         });
-        toast("팀원 계정을 추가했습니다.");
+        toast(t("팀원 계정을 추가했습니다."));
       },
-      "계정 추가",
+      t("계정 추가"),
     ),
   );
 }
 function renderJobs() {
   const panel = $("#upload-panel");
   panel.hidden = !jobs.length;
-  panel.innerHTML = `<div class="upload-panel-head"><span>업로드 ${jobs.filter((j) => j.status === "done").length} / ${jobs.length} 완료</span><button class="icon-button" id="hide-uploads" aria-label="업로드 창 접기">${icon("close")}</button></div><div class="upload-jobs">${jobs.map((j, i) => `<div class="upload-job"><div class="upload-job-name"><span>${esc(j.name)}</span><span>${j.status === "done" ? "✓" : Math.floor(j.progress || 0) + "%"}</span>${["uploading", "queued"].includes(j.status) ? `<button data-pause="${i}">일시정지</button>` : ["paused", "error", "pending"].includes(j.status) ? `<button data-resume="${i}">재개</button><button data-cancel="${i}">취소</button>` : ""}</div><p>${esc(j.message || { queued: "대기 중", uploading: "업로드 중", done: bytes(j.size) + " · 업로드 완료", paused: "일시정지됨", pending: "같은 파일을 선택하면 이어서 업로드합니다." }[j.status] || "")}</p><div class="progress-track"><div class="progress-fill" style="width:${Math.min(100, j.progress || 0)}%"></div></div></div>`).join("")}</div>`;
+  panel.innerHTML = `<div class="upload-panel-head"><span>${t(
+    "업로드 {done} / {total} 완료",
+    {
+      done: jobs.filter((j) => j.status === "done").length,
+      total: jobs.length,
+    },
+  )}</span><button class="icon-button" id="hide-uploads" aria-label="${t("업로드 창 접기")}">${icon("close")}</button></div><div class="upload-jobs">${jobs
+    .map(
+      (j, i) =>
+        `<div class="upload-job"><div class="upload-job-name"><span>${esc(j.name)}</span><span>${j.status === "done" ? "✓" : Math.floor(j.progress || 0) + "%"}</span>${["uploading", "queued"].includes(j.status) ? `<button data-pause="${i}">${t("일시정지")}</button>` : ["paused", "error", "pending"].includes(j.status) ? `<button data-resume="${i}">${t("재개")}</button><button data-cancel="${i}">${t("취소")}</button>` : ""}</div><p>${esc(
+          t(j.message) ||
+            {
+              queued: t("대기 중"),
+              uploading: t("업로드 중"),
+              done: bytes(j.size) + t(" \xB7 업로드 완료"),
+              paused: t("일시정지됨"),
+              pending: t("같은 파일을 선택하면 이어서 업로드합니다."),
+            }[j.status] ||
+            "",
+        )}</p><div class="progress-track"><div class="progress-fill" style="width:${Math.min(100, j.progress || 0)}%"></div></div></div>`,
+    )
+    .join("")}</div>`;
   $("#hide-uploads").onclick = () => (panel.hidden = true);
   $$("[data-pause]").forEach(
     (b) =>
@@ -563,7 +691,7 @@ function renderJobs() {
         const j = jobs[+b.dataset.resume];
         if (j.file) uploadFile(j);
         else {
-          toast("중단된 파일과 동일한 파일을 선택해 주세요.");
+          toast(t("중단된 파일과 동일한 파일을 선택해 주세요."));
           state.parent = j.parent;
           $("#file-input").click();
         }
@@ -575,7 +703,10 @@ function renderJobs() {
         const j = jobs[+b.dataset.cancel];
         try {
           if (j.running) await j.running;
-          if (j.id) await api("/uploads/" + j.id, { method: "DELETE" });
+          if (j.id)
+            await api("/uploads/" + j.id, {
+              method: "DELETE",
+            });
           jobs = jobs.filter((x) => x !== j);
           renderJobs();
         } catch (err) {
@@ -604,7 +735,7 @@ async function fingerprint(file) {
 }
 function putChunk(url, blob, direct, job, number, progress) {
   return new Promise((resolve, reject) => {
-    if (job.paused) return reject(new Error("일시정지됨"));
+    if (job.paused) return reject(new Error(t("일시정지됨")));
     const xhr = new XMLHttpRequest();
     job.xhrs.add(xhr);
     xhr.open("PUT", url);
@@ -622,7 +753,7 @@ function putChunk(url, blob, direct, job, number, progress) {
       xhr.status >= 200 && xhr.status < 300
         ? resolve()
         : reject(
-            new Error("전송에 실패했습니다. 연결을 확인하고 재개해 주세요."),
+            new Error(t("전송에 실패했습니다. 연결을 확인하고 재개해 주세요.")),
           );
     };
     xhr.onerror =
@@ -633,8 +764,8 @@ function putChunk(url, blob, direct, job, number, progress) {
           reject(
             new Error(
               job.paused
-                ? "일시정지됨"
-                : "네트워크 연결을 확인하고 재개해 주세요.",
+                ? t("일시정지됨")
+                : t("네트워크 연결을 확인하고 재개해 주세요."),
             ),
           );
         };
@@ -667,7 +798,9 @@ async function uploadFile(job) {
       }
       const status = await api("/uploads/" + job.id);
       if (status.assembled) {
-        await api("/uploads/" + job.id + "/complete", { method: "POST" });
+        await api("/uploads/" + job.id + "/complete", {
+          method: "POST",
+        });
         job.status = "done";
         job.progress = 100;
         await refresh();
@@ -707,11 +840,16 @@ async function uploadFile(job) {
               await new Promise((r) => setTimeout(r, 500 * 2 ** retry));
             }
           }
-          if (!success) throw new Error("일시정지됨");
+          if (!success) throw new Error(t("일시정지됨"));
         }
       }
       const workers = await Promise.allSettled(
-        Array.from({ length: 3 }, worker),
+        Array.from(
+          {
+            length: 3,
+          },
+          worker,
+        ),
       );
       const failed = workers.find((r) => r.status === "rejected");
       if (failed) throw failed.reason;
@@ -719,7 +857,9 @@ async function uploadFile(job) {
         job.status = "paused";
         return;
       }
-      await api("/uploads/" + job.id + "/complete", { method: "POST" });
+      await api("/uploads/" + job.id + "/complete", {
+        method: "POST",
+      });
       job.status = "done";
       job.progress = 100;
       job.message = "";
@@ -737,17 +877,17 @@ async function uploadFile(job) {
 async function addFiles(files) {
   if (!state.user) return;
   if (state.view !== "drive") {
-    toast("내 드라이브에서 업로드할 폴더를 선택해 주세요.");
+    toast(t("내 드라이브에서 업로드할 폴더를 선택해 주세요."));
     return;
   }
   const added = [];
   for (const file of files) {
     if (file.size > state.user.max_file_size) {
       toast(
-        file.name +
-          ": 최대 " +
-          bytes(state.user.max_file_size) +
-          "까지 업로드할 수 있습니다.",
+        t("{name}: 최대 {size}까지 업로드할 수 있습니다.", {
+          name: file.name,
+          size: bytes(state.user.max_file_size),
+        }),
       );
       continue;
     }
@@ -761,8 +901,8 @@ async function addFiles(files) {
     if (job) {
       if (job.running || job.status === "uploading") continue;
       job.file = file;
-      /* Verify file identity through the server before resuming an existing job. */ job.id =
-        null;
+      /* Verify file identity through the server before resuming an existing job. */
+      job.id = null;
       job.status = "queued";
       job.message = "";
     } else {
@@ -783,16 +923,16 @@ async function addFiles(files) {
 }
 async function publicShare(token) {
   $("#auth").hidden = false;
-  const card = `<div class="auth-card"><a class="brand" href="${BASE}/"><img src="${BASE}/static/logo.svg" alt=""><span>PMK <strong>Drive</strong></span></a>`;
+  const card = `<div class="auth-card">${languagePicker()}<a class="brand" href="${BASE}/"><img src="${BASE}/static/logo.svg" alt=""><span>PMK <strong>Drive</strong></span></a>`;
   try {
     const info = await api("/shared/" + encodeURIComponent(token));
     $("#auth").innerHTML =
       card +
-      `<h1>파일이 도착했어요.</h1><p>PMK Drive에서 공유한 파일입니다.</p><div class="share-file">${fileIcon(info.name)}<div><strong>${esc(info.name)}</strong><small>${bytes(info.size)} · ${date(info.updated)}</small></div></div><a class="button primary" href="${BASE}/api/shared/${encodeURIComponent(token)}/download">${icon("download")}파일 다운로드</a><p class="auth-note">공유 링크는 정해진 기간 동안만 사용할 수 있습니다.</p></div>`;
+      `<h1>${t("파일이 도착했어요.")}</h1><p>${t("PMK Drive에서 공유한 파일입니다.")}</p><div class="share-file">${fileIcon(info.name)}<div><strong>${esc(info.name)}</strong><small>${bytes(info.size)} · ${date(info.updated)}</small></div></div><a class="button primary" href="${BASE}/api/shared/${encodeURIComponent(token)}/download">${icon("download")}${t("파일 다운로드")}</a><p class="auth-note">${t("공유 링크는 정해진 기간 동안만 사용할 수 있습니다.")}</p></div>`;
   } catch (err) {
     $("#auth").innerHTML =
       card +
-      `<h1>링크를 사용할 수 없습니다.</h1><p>${esc(err.message)}</p></div>`;
+      `<h1>${t("링크를 사용할 수 없습니다.")}</h1><p>${esc(err.message)}</p></div>`;
   }
 }
 async function start() {
@@ -801,10 +941,7 @@ async function start() {
     $("#auth").hidden = true;
     $("#shell").hidden = false;
     $("#account").textContent = state.user.display_name.slice(0, 1);
-    $("#storage-description").textContent =
-      state.user.storage !== "local"
-        ? "클라우드 스토리지에 보관됩니다."
-        : "서버 저장소에 보관됩니다.";
+    renderStats();
     const hash = new URLSearchParams(location.hash.slice(1));
     state.view = titles[hash.get("view")] ? hash.get("view") : "drive";
     state.parent = hash.get("parent") || null;
@@ -826,6 +963,10 @@ document.addEventListener("click", async (e) => {
   if (!e.target.closest("#context-menu") && !e.target.closest("[data-menu]"))
     $("#context-menu").hidden = true;
   if (!b) return;
+  if (b.dataset.language) {
+    setLanguage(b.dataset.language);
+    return;
+  }
   try {
     if (b.dataset.view) navigate(b.dataset.view);
     if (b.dataset.folder) navigate("drive", b.dataset.folder);
@@ -852,10 +993,12 @@ document.addEventListener("click", async (e) => {
       render();
     }
     if (b.dataset.revoke) {
-      await api("/shares/" + b.dataset.revoke, { method: "DELETE" });
+      await api("/shares/" + b.dataset.revoke, {
+        method: "DELETE",
+      });
       b.closest(".share-existing").remove();
       $("#generated-link").innerHTML = "";
-      toast("공유를 해제했습니다.");
+      toast(t("공유를 해제했습니다."));
       await refresh();
     }
     if (b.dataset.bulk) {
@@ -870,18 +1013,24 @@ document.addEventListener("click", async (e) => {
         }
       } else if (b.dataset.bulk === "trash") {
         dialog(
-          "선택한 파일 삭제",
-          `<p>${ids.length}개 파일을 휴지통으로 이동합니다.</p>`,
+          t("선택한 파일 삭제"),
+          `<p>${t("{count}개 파일을 휴지통으로 이동합니다.", {
+            count: ids.length,
+          })}</p>`,
           async () => {
             for (const id of ids)
-              await api("/nodes/" + id, { method: "DELETE" });
+              await api("/nodes/" + id, {
+                method: "DELETE",
+              });
             await refresh();
           },
-          "이동",
+          t("이동"),
         );
       } else {
         for (const id of ids)
-          await api("/nodes/" + id + "/restore", { method: "POST" });
+          await api("/nodes/" + id + "/restore", {
+            method: "POST",
+          });
         await refresh();
       }
     }
@@ -974,5 +1123,39 @@ window.addEventListener("beforeunload", (e) => {
   }
 });
 const shareMatch = location.pathname.match(/\/s\/([^/]+)$/);
+i18n.localize(document);
 if (shareMatch) publicShare(shareMatch[1]);
 else start();
+function languagePicker() {
+  return `<div class="language-picker" role="group" aria-label="Language"><button type="button" data-language="ko" lang="ko" aria-pressed="${i18n.language() === "ko"}">한국어</button><button type="button" data-language="en" lang="en" aria-pressed="${i18n.language() === "en"}">EN</button></div>`;
+}
+function renderStats() {
+  $("#storage-used").textContent = t("{size} 사용 중", {
+    size: bytes(state.stats.bytes),
+  });
+  $("#footer-status").textContent = t("총 {count}개 파일 · 팀 공유 공간", {
+    count: state.stats.files.toLocaleString(i18n.locale()),
+  });
+  if (state.user)
+    $("#storage-description").textContent = t(
+      state.user.storage !== "local"
+        ? "클라우드 스토리지에 보관됩니다."
+        : "서버 저장소에 보관됩니다.",
+    );
+}
+function setLanguage(language) {
+  if (!i18n.setLanguage(language)) return;
+  i18n.localize(document);
+  // Never reload: keep active transfers, folder, search, selection and login inputs.
+  $("#context-menu").hidden = true;
+  $("#toast").hidden = true;
+  if (state.user) {
+    renderStats();
+    render();
+    renderSelection();
+    const hidden = $("#upload-panel").hidden;
+    renderJobs();
+    $("#upload-panel").hidden = hidden;
+  } else if (shareMatch) publicShare(shareMatch[1]);
+  $$(".form-error").forEach((el) => (el.textContent = t(el.textContent)));
+}

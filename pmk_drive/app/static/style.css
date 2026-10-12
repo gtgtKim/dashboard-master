@@ -110,7 +110,7 @@ svg.icon {
   align-items: center;
   justify-content: space-between;
 }
-.workspace-label span {
+.workspace-label > .workspace-badge {
   font-size: 10px;
   letter-spacing: 0;
   background: #e8eee8;
@@ -689,7 +689,7 @@ h1 {
   width: 14px;
   height: 14px;
 }
-.drop-hint > span {
+.drop-hint > .supported-formats {
   color: #acb5ad;
   border-left: 1px solid #e1e7df;
   padding-left: 11px;
@@ -999,6 +999,7 @@ dialog p {
   transition: width 0.1s;
 }
 .auth-screen {
+  grid-template-columns: minmax(0, 1fr);
   min-height: 100vh;
   background:
     radial-gradient(ellipse at 30% 10%, #e5eddf, transparent 70%), #f5f8f1;
@@ -1101,7 +1102,7 @@ dialog p {
   .file-table th:nth-child(2) {
     width: 43%;
   }
-  .drop-hint > span {
+  .drop-hint > .supported-formats {
     display: none;
   }
 }
@@ -1274,5 +1275,78 @@ dialog p {
   }
   .folder-label {
     margin-top: 25px;
+  }
+}
+
+.language-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid #dde6dd;
+  border-radius: 7px;
+  background: #f6f8f3;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.language-picker button {
+  padding: 5px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  color: #829084;
+  line-height: 1.2;
+}
+.language-picker button[aria-pressed="true"] {
+  background: #fff;
+  color: var(--green);
+  font-weight: 650;
+  box-shadow: 0 1px 3px #244c2812;
+}
+.auth-card > .language-picker {
+  display: flex;
+  width: max-content;
+  margin: -9px -9px 27px auto;
+}
+.login-card .brand {
+  margin-bottom: 30px;
+}
+.login-card .field {
+  margin: 18px 0;
+}
+.login-card .form-error:empty {
+  display: none;
+}
+.login-card .button {
+  margin-top: 9px;
+}
+.topbar-right {
+  gap: 16px;
+}
+.search,
+.search input {
+  min-width: 0;
+}
+html[lang="en"] .auth-card h1 {
+  font-size: 23px;
+  line-height: 1.3;
+}
+html[lang="en"] .filters {
+  flex-wrap: wrap;
+}
+html[lang="en"] .context-menu {
+  min-width: 210px;
+}
+@media (max-width: 620px) {
+  .topbar-right {
+    gap: 8px;
+  }
+  .language-picker button {
+    padding: 5px 6px;
+  }
+  .auth-card > .language-picker {
+    margin-right: 0;
+  }
+  .filters {
+    min-width: 0;
   }
 }

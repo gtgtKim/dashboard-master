@@ -12,6 +12,8 @@
 - 만료 기간 1/7/30일의 파일 공유 링크, 링크 해제
 - 계정 로그인, 관리자에 의한 팀원 추가. 모든 계정은 하나의 팀 공간을 공동 관리합니다.
 - 모바일 레이아웃과 키보드 검색 단축키 `/`
+- 한국어/영어 선택(로그인·파일 관리·공유 화면), 언어 설정 저장. 전환 중 업로드·검색·선택 상태 유지
+- 로그인 화면은 로고, 언어 선택, 아이디, 비밀번호, 로그인 버튼만 표시
 
 파일 내용의 브라우저 내 편집, Office 미리보기, 버전 관리, 개인별 폴더 ACL, 폴더 ZIP 다운로드는 이 버전의 범위에 포함하지 않습니다. 휴지통은 자동 삭제되지 않으며 파일 저장 용량을 계속 사용합니다.
 
@@ -82,3 +84,7 @@ sudo -u pmk-drive /opt/pmk_drive/venv/bin/python -c 'import sqlite3; a=sqlite3.c
 ```
 
 여러 앱 인스턴스로 확장하려면 SQLite를 PostgreSQL 등으로 이전해야 합니다. 원본 파일명은 오브젝트 경로나 로컬 경로로 사용하지 않으며 UUID 키로 저장합니다. 세션·공유 토큰은 해시로 저장하고, 쿠키는 HTTPS에서 Secure/HttpOnly/SameSite=Strict로 발급합니다. 사설 파일을 HTML로 inline 렌더링하지 않고 attachment로 다운로드합니다.
+
+## 언어 UI 검증
+
+테스트용 로컬 서버 실행 후 Playwright와 Chrome이 있는 환경에서 `node tests/localization.cjs`를 실행합니다. 기본 테스트 계정은 `admin` / `test-password-12345`이며 전용 테스트 데이터 디렉터리를 사용하세요. 다른 테스트 환경은 `PLAYWRIGHT_BASE_URL`, `PMK_TEST_USERNAME`, `PMK_TEST_PASSWORD`, `PMK_TEST_OUTPUT`으로 지정합니다. 입력값 보존, 언어 설정 유지, API 오류 번역, 업로드 중 언어 전환, 원본 파일명 보존, 공유 화면과 모바일 레이아웃을 확인합니다.
