@@ -13,13 +13,17 @@ dashboard-master/
       deploy-all.sh
   skt/
   gentlemonster/
+  pmk_drive/
 ```
 
 ## Routes
 
 ```text
 https://34.47.71.229/                 -> 404 Not Found
+https://34.47.71.229/pmk             -> PMK menu (Drive, HVC, Web Vitals)
+https://34.47.71.229/pmk_drive/       -> PMK Drive (GCS file workspace)
 https://34.47.71.229/pmk_hvc/         -> PMK HVC report
+https://34.47.71.229/pmk_webvital/    -> PMK Web Vitals
 https://34.47.71.229/skt/             -> SKT dashboard
 https://34.47.71.229/gentlemonster/   -> Gentle Monster dashboard
 ```
@@ -46,3 +50,7 @@ On the VM it is installed to:
 ```
 
 Use `infra/deploy/deploy-all.sh` on the VM to update both apps and reload Nginx.
+
+## PMK Drive
+
+Folder-based file sharing with resumable direct-to-GCS uploads, plus the bilingual PMK service menu at `/pmk`. See [pmk_drive/README.md](pmk_drive/README.md) for setup, access, storage and deployment. The app runs as its own systemd service on port 4178; its installer adds the PMK Drive and menu Nginx blocks and preserves other live routes.

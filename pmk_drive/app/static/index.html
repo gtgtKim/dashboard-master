@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PMK Drive</title>
+    <meta
+      name="description"
+      content="폴더로 정리하고, 파일을 안전하게 공유하는 PMK 팀 드라이브"
+      data-i18n-content="폴더로 정리하고, 파일을 안전하게 공유하는 PMK 팀 드라이브"
+    />
+    <link rel="icon" href="__BASE__/static/logo.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="__BASE__/static/style.css" />
+    <script src="__BASE__/static/i18n.js" defer></script>
+    <script src="__BASE__/static/app.js" defer></script>
+  </head>
+  <body data-base="__BASE__">
+    <div id="auth" class="auth-screen" hidden></div>
+    <div id="shell" hidden>
+      <aside class="sidebar">
+        <a
+          class="brand"
+          href="__BASE__/"
+          aria-label="PMK Drive 홈"
+          data-i18n-aria-label="PMK Drive 홈"
+          ><img src="__BASE__/static/logo.svg" alt="" /><span
+            >PMK <strong>Drive</strong></span
+          ></a
+        >
+        <div class="workspace-label">
+          <span data-i18n="팀 작업 공간">팀 작업 공간</span>
+          <span class="workspace-badge"
+            ><span data-i18n="공유 공간">공유 공간</span></span
+          >
+        </div>
+        <button class="upload-main" id="upload-main">
+          <span data-icon="plus"></span
+          ><span data-i18n="새로 업로드"> 새로 업로드 </span
+          ><span data-icon="upload"></span>
+        </button>
+        <nav aria-label="드라이브 탐색" data-i18n-aria-label="드라이브 탐색">
+          <button data-view="drive" class="nav-item active">
+            <span data-icon="drive"></span
+            ><span data-i18n="내 드라이브">내 드라이브 </span>
+          </button>
+          <button data-view="recent" class="nav-item">
+            <span data-icon="clock"></span
+            ><span data-i18n="최근 파일">최근 파일 </span>
+          </button>
+          <button data-view="starred" class="nav-item">
+            <span data-icon="star"></span
+            ><span data-i18n="중요 파일">중요 파일 </span>
+          </button>
+          <button data-view="shared" class="nav-item">
+            <span data-icon="link"></span
+            ><span data-i18n="링크로 공유 중">링크로 공유 중 </span>
+          </button>
+          <button data-view="trash" class="nav-item">
+            <span data-icon="trash"></span
+            ><span data-i18n="휴지통">휴지통 </span>
+          </button>
+        </nav>
+        <div class="folder-label">
+          <span data-i18n="폴더"> 폴더 </span
+          ><button
+            class="icon-button"
+            id="side-folder"
+            aria-label="새 폴더"
+            data-i18n-aria-label="새 폴더"
+          >
+            <span data-icon="plus"></span>
+          </button>
+        </div>
+        <div id="folder-tree" class="folder-tree"></div>
+        <div class="sidebar-bottom">
+          <div class="storage-title">
+            <span data-icon="cloud"></span
+            ><span data-i18n="저장 공간"> 저장 공간 </span
+            ><span class="status-dot"></span>
+          </div>
+          <strong id="storage-used"
+            ><span data-i18n="0 B 사용 중">0 B 사용 중</span></strong
+          >
+          <p id="storage-description">
+            <span data-i18n="파일 저장소">파일 저장소</span>
+          </p>
+          <div class="sidebar-note">
+            <span data-i18n="필요한 파일을, 필요한 순간에."
+              >필요한 파일을, 필요한 순간에.</span
+            >
+          </div>
+        </div>
+      </aside>
+      <div class="body-column">
+        <header class="topbar">
+          <button
+            id="mobile-menu"
+            class="icon-button"
+            aria-label="메뉴"
+            data-i18n-aria-label="메뉴"
+          >
+            <span data-icon="menu"></span></button
+          ><label class="search"
+            ><span data-icon="search"></span
+            ><input
+              id="search"
+              type="search"
+              placeholder="드라이브에서 파일 및 폴더 검색"
+              data-i18n-placeholder="드라이브에서 파일 및 폴더 검색"
+              autocomplete="off"
+            /><kbd>/</kbd></label
+          >
+          <div class="topbar-right">
+            <div class="language-picker" role="group" aria-label="Language">
+              <button
+                type="button"
+                data-language="ko"
+                lang="ko"
+                aria-pressed="true"
+              >
+                한국어</button
+              ><button
+                type="button"
+                data-language="en"
+                lang="en"
+                aria-pressed="false"
+              >
+                EN
+              </button>
+            </div>
+            <span class="team-badge"
+              ><span class="status-dot"></span
+              ><span data-i18n="팀 드라이브">팀 드라이브</span></span
+            ><button
+              id="account"
+              class="avatar"
+              aria-label="계정 메뉴"
+              data-i18n-aria-label="계정 메뉴"
+            >
+              P
+            </button>
+          </div>
+        </header>
+        <main id="main">
+          <div class="breadcrumbs" id="breadcrumbs"></div>
+          <div class="page-heading">
+            <div>
+              <div class="eyebrow">YOUR TEAM, CONNECTED</div>
+              <h1 id="page-title">
+                <span data-i18n="내 드라이브">내 드라이브</span>
+              </h1>
+              <p id="page-description">
+                <span data-i18n="함께 쓰는 파일, 한곳에서 깔끔하게."
+                  >함께 쓰는 파일, 한곳에서 깔끔하게.</span
+                >
+              </p>
+            </div>
+            <div class="heading-actions">
+              <button id="new-folder" class="button">
+                <span data-icon="folder-plus"></span
+                ><span data-i18n="새 폴더">새 폴더</span></button
+              ><button id="upload-button" class="button primary">
+                <span data-icon="upload"></span
+                ><span data-i18n="파일 업로드">파일 업로드 </span>
+              </button>
+            </div>
+          </div>
+          <div class="filters-bar">
+            <div id="filters" class="filters">
+              <button data-type="all" class="filter active">
+                <span data-i18n="전체 파일">전체 파일</span></button
+              ><button data-type="excel" class="filter">
+                <span class="mini-type excel">X</span
+                ><span data-i18n="스프레드시트">스프레드시트</span></button
+              ><button data-type="ppt" class="filter">
+                <span class="mini-type ppt">P</span
+                ><span data-i18n="프레젠테이션">프레젠테이션</span></button
+              ><button data-type="document" class="filter">
+                <span class="mini-type doc">D</span
+                ><span data-i18n="문서">문서 </span>
+              </button>
+            </div>
+            <div class="view-options">
+              <span id="item-count"></span
+              ><button
+                id="list-view"
+                class="icon-button selected"
+                aria-label="목록 보기"
+                data-i18n-aria-label="목록 보기"
+              >
+                <span data-icon="list"></span></button
+              ><button
+                id="grid-view"
+                class="icon-button"
+                aria-label="격자 보기"
+                data-i18n-aria-label="격자 보기"
+              >
+                <span data-icon="grid"></span>
+              </button>
+            </div>
+          </div>
+          <div id="selection-bar" class="selection-bar" hidden></div>
+          <div id="folder-section"></div>
+          <div id="files-section"></div>
+          <div class="drop-hint">
+            <span data-icon="upload"></span
+            ><span data-i18n="파일을 이곳으로 드래그하여 업로드하세요"
+              >파일을 이곳으로 드래그하여 업로드하세요</span
+            ><span class="supported-formats"
+              ><span data-i18n="Excel, PowerPoint, PDF 및 모든 파일 형식"
+                >Excel, PowerPoint, PDF 및 모든 파일 형식</span
+              ></span
+            >
+          </div>
+        </main>
+        <footer>
+          <span>PMK Drive</span
+          ><span id="footer-status"
+            ><span data-i18n="팀의 모든 파일을 연결합니다."
+              >팀의 모든 파일을 연결합니다.</span
+            ></span
+          >
+        </footer>
+      </div>
+    </div>
+    <div id="drop-overlay" hidden>
+      <span data-icon="upload"></span>
+      <h2>
+        <span data-i18n="파일을 놓아 업로드하세요"
+          >파일을 놓아 업로드하세요</span
+        >
+      </h2>
+      <p>
+        <span data-i18n="현재 폴더에 파일을 추가합니다"
+          >현재 폴더에 파일을 추가합니다</span
+        >
+      </p>
+    </div>
+    <div id="upload-panel" class="upload-panel" hidden></div>
+    <div id="context-menu" class="context-menu" hidden></div>
+    <div id="toast" role="status" aria-live="polite" hidden></div>
+    <dialog id="dialog">
+      <form id="dialog-form"><div id="dialog-content"></div></form>
+    </dialog>
+    <input id="file-input" type="file" multiple hidden />
+  </body>
+</html>

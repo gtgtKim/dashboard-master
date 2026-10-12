@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title data-i18n="PMK · 전체 메뉴">PMK · 전체 메뉴</title>
+    <link rel="icon" href="__BASE__/static/logo.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="__BASE__/static/portal.css" />
+    <script src="__BASE__/static/i18n.js" defer></script>
+    <script src="__BASE__/static/portal.js" defer></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="/pmk" aria-label="PMK 홈" data-i18n-aria-label="PMK 홈">
+        <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></span>
+        <span>PMK <span class="brand-subtitle">Workspace</span></span>
+      </a>
+      <div class="language-picker" role="group" aria-label="언어 선택" data-i18n-aria-label="언어 선택">
+        <button type="button" data-language="ko" aria-pressed="true" lang="ko">한국어</button>
+        <button type="button" data-language="en" aria-pressed="false" lang="en">EN</button>
+      </div>
+    </header>
+    <main>
+      <div class="page-heading">
+        <p class="eyebrow">PMK WORKSPACE</p>
+        <h1 data-i18n="전체 메뉴">전체 메뉴</h1>
+        <p class="intro" data-i18n="사용할 서비스를 선택하세요.">사용할 서비스를 선택하세요.</p>
+      </div>
+      <nav class="services" aria-label="서비스 메뉴" data-i18n-aria-label="서비스 메뉴">
+        <a class="service-card drive" href="__BASE__/" aria-labelledby="drive-title" aria-describedby="drive-description">
+          <div class="card-top"><span class="service-icon" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M4 10V8a2 2 0 0 1 2-2h7l3 4h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V10Z"/><path d="M4 12h24"/></svg></span><span class="service-category" data-i18n="파일">파일</span></div>
+          <h2 id="drive-title" data-i18n="드라이브">드라이브</h2>
+          <p id="drive-description" data-i18n="파일을 정리하고 공유하세요.">파일을 정리하고 공유하세요.</p>
+          <span class="card-action"><span data-i18n="열기">열기</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></span>
+        </a>
+        <a class="service-card hvc" href="/pmk_hvc/" aria-labelledby="hvc-title" aria-describedby="hvc-description">
+          <div class="card-top"><span class="service-icon" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M5 26h23M8 21v-6m8 6V6m8 15V11"/><circle cx="8" cy="11" r="1"/><circle cx="24" cy="7" r="1"/></svg></span><span class="service-category" data-i18n="분석">분석</span></div>
+          <h2 id="hvc-title">HVC</h2>
+          <p id="hvc-description" data-i18n="HVC 리포트를 확인하세요.">HVC 리포트를 확인하세요.</p>
+          <span class="card-action"><span data-i18n="열기">열기</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></span>
+        </a>
+        <a class="service-card vitals" href="/pmk_webvital/" aria-labelledby="vitals-title" aria-describedby="vitals-description">
+          <div class="card-top"><span class="service-icon" aria-hidden="true"><svg viewBox="0 0 32 32"><rect x="4" y="5" width="24" height="22" rx="3"/><path d="M4 11h24M9 20h3l3-5 4 8 3-5h2"/><path d="M8 8h.1m3 0h.1"/></svg></span><span class="service-category" data-i18n="모니터링">모니터링</span></div>
+          <h2 id="vitals-title">Web Vitals</h2>
+          <p id="vitals-description" data-i18n="웹사이트 성능을 확인하세요.">웹사이트 성능을 확인하세요.</p>
+          <span class="card-action"><span data-i18n="열기">열기</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></span>
+        </a>
+      </nav>
+    </main>
+    <footer>PMK Workspace</footer>
+  </body>
+</html>

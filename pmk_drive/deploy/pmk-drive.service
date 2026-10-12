@@ -1,0 +1,26 @@
+[Unit]
+Description=PMK Drive file workspace
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pmk-drive
+Group=pmk-drive
+WorkingDirectory=/opt/pmk_drive/current
+EnvironmentFile=/etc/pmk-drive/app.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/pmk_drive/venv/bin/uvicorn app.main:create_app --factory --host 127.0.0.1 --port 4178 --proxy-headers --forwarded-allow-ips=127.0.0.1 --no-access-log
+Restart=on-failure
+RestartSec=3
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/pmk-drive
+MemoryMax=512M
+TasksMax=128
+
+[Install]
+WantedBy=multi-user.target

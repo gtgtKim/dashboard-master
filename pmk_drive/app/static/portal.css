@@ -1,0 +1,74 @@
+:root {
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  color: #263a34;
+  background: #f6f8f6;
+  font-synthesis: none;
+}
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100svh; display: flex; flex-direction: column; }
+a { color: inherit; text-decoration: none; -webkit-tap-highlight-color: transparent; }
+button { font: inherit; cursor: pointer; }
+a:focus-visible, button:focus-visible { outline: 3px solid #438e76; outline-offset: 5px; }
+.site-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 24px max(32px, calc((100vw - 1080px) / 2));
+  background: #fff;
+  border-bottom: 1px solid #e5ebe6;
+}
+.brand { display: inline-flex; align-items: center; gap: 12px; font-size: 21px; font-weight: 750; letter-spacing: -.6px; }
+.brand-mark { width: 38px; height: 38px; display: grid; place-items: center; background: #176857; border-radius: 11px; }
+.brand-mark svg { width: 21px; height: 21px; fill: #fff; }
+.brand-subtitle { margin-left: 5px; color: #7b8982; font-size: 15px; font-weight: 400; letter-spacing: -.2px; }
+.language-picker { display: flex; gap: 3px; padding: 4px; background: #f3f6f3; border: 1px solid #e3e9e3; border-radius: 9px; }
+.language-picker button { min-height: 30px; padding: 5px 10px; border: 0; border-radius: 6px; background: transparent; color: #62736a; font-size: 12px; }
+.language-picker button[aria-pressed="true"] { color: #176857; background: #fff; font-weight: 650; box-shadow: 0 1px 4px #263a3412; }
+main { width: min(1080px, calc(100% - 64px)); margin: 0 auto; padding: 76px 0 96px; flex: 1; }
+.eyebrow { margin: 0 0 18px; color: #47715f; font-size: 11px; font-weight: 650; letter-spacing: 2px; }
+h1 { margin: 0; font-size: clamp(32px, 4vw, 42px); font-weight: 650; letter-spacing: -1.8px; line-height: 1.25; }
+.intro { margin: 16px 0 0; color: #6b7b72; font-size: 15px; line-height: 1.6; }
+.services { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; margin-top: 46px; }
+.service-card {
+  --accent: #176857;
+  --tint: #e9f3ed;
+  display: flex;
+  flex-direction: column;
+  padding: 30px;
+  background: #fff;
+  border: 1px solid #e0e7e1;
+  border-radius: 18px;
+  box-shadow: 0 3px 6px #253b2d03;
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+}
+.hvc { --accent: #5265a2; --tint: #edf0f9; }
+.vitals { --accent: #9c6a32; --tint: #faf1e5; }
+.card-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 34px; }
+.service-icon { width: 56px; height: 56px; display: grid; place-items: center; border-radius: 15px; color: var(--accent); background: var(--tint); }
+.service-icon svg { width: 30px; height: 30px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.service-category { color: #718078; font-size: 11px; }
+h2 { margin: 0; font-size: 25px; letter-spacing: -.7px; font-weight: 620; line-height: 1.3; }
+.service-card p { margin: 12px 0 32px; font-size: 14px; color: #718078; line-height: 1.7; }
+.card-action { margin-top: auto; padding-top: 20px; border-top: 1px solid #edf0ed; display: flex; align-items: center; justify-content: space-between; color: var(--accent); font-size: 13px; font-weight: 600; }
+.card-action svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; transition: transform .18s ease; }
+footer { width: min(1080px, calc(100% - 64px)); margin: 0 auto; padding: 24px 0; border-top: 1px solid #e0e7e1; color: #7b8982; font-size: 11px; }
+@media (hover: hover) {
+  .service-card:hover { transform: translateY(-4px); border-color: var(--accent); box-shadow: 0 12px 28px #253b2d0b; }
+  .service-card:hover .card-action svg { transform: translateX(3px); }
+}
+@media (max-width: 780px) {
+  .site-header { padding: 20px 24px; }
+  main { width: calc(100% - 48px); padding: 48px 0 64px; }
+  .services { grid-template-columns: 1fr; gap: 16px; margin-top: 32px; }
+  .service-card { padding: 24px; }
+  .card-top { margin-bottom: 22px; }
+  .service-card p { margin-bottom: 24px; }
+  footer { width: calc(100% - 48px); }
+}
+@media (max-width: 400px) {
+  .brand-subtitle { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .service-card, .card-action svg { transition: none; }
+}
